@@ -2,7 +2,7 @@
 ##########
 # Authors: Rachel Binks and Ben Anderson, based on scripts from Mastretta-Yanes et al. 2015
 # Date: June 2021
-# Description: Run Mastretta-Yanes et al. error estimation for technical replicates using an output vcf file
+# Description: run Mastretta-Yanes et al. error estimation for technical replicates
 ##########
 
 
@@ -66,7 +66,7 @@ if (length(args) == 0) {
 }
 
 if (! samples_present) {
-	cat("No argument for sample names, so we assume duplicates are named with an \"_R\"\n"), call. = FALSE)
+	cat("No argument for sample names, so we assume duplicates are named with an \"_R\"\n")
 }
 
 if (! vcf_present) {
@@ -98,7 +98,7 @@ if (samples_present) {
 # test is to see whether loci are called in one replicate but not the other
 
 
-# determine names of replicate pairs and combine into a table
+# determine names of replicate pairs and combine into a dataframe
 reps <- grep("_R$", indNames(gl), value = TRUE)
 samps <- indNames(gl)[match(sub("_R$", "", reps), indNames(gl))]
 pairs <- cbind(reps, samps)
@@ -109,8 +109,9 @@ npairs <- nrow(pairs)
 ######## Loci and allele error rates VS. SNP error rates
 # Locus error rate: if a locus is in one replicate but not the other,
 # allele error rate: if the locus is in both but differs by at least one SNP, and
-# SNP error rate: if a SNP is found in both and differs (may be multiple per locus)
+# SNP error rate: if a SNP is found in both and differs (there may be multiple SNPs per locus)
 
-# If we use only VCF input, then we can't get locus error rate; also
+# If we use VCF input, then we can only get locus error rate if there is one SNP per locus, otherwise
+# we are measuring SNP 'missingness'; also
 # allele error rate == SNP error rate if only one SNP has been output per locus
 
