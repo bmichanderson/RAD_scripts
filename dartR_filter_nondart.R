@@ -335,8 +335,10 @@ dev.off()
 # Apply filters on loci metrics
 filter <- genl
 filter <- gl.filter.reproducibility(filter, threshold = rep_thresh, verbose = 3)
-filter <- gl.filter.callrate(filter, method = "loc", threshold = missing_loc_thresh, verbose = 3)
-filter <- gl.filter.callrate(filter, method = "ind", threshold = missing_ind_thresh, verbose = 3)
+filter <- gl.filter.callrate(filter, method = "loc", threshold = missing_loc_thresh,
+			plot = FALSE, verbose = 3)
+filter <- gl.filter.callrate(filter, method = "ind", threshold = missing_ind_thresh, 
+			plot = FALSE, verbose = 3)
 filter <- gl.filter.maf(filter, threshold = minor_allele_thresh, verbose = 3)
 # NOTE: rdepth was not working because there were NA values in the read depth column (not sure why)
 filter <- gl.filter.rdepth(filter, lower = lower_rdepth, upper = upper_rdepth, verbose = 3)
