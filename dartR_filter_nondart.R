@@ -1,7 +1,7 @@
 
 ##########
 # Authors: Rachel Binks and Ben Anderson
-# Date: June 2021
+# Date: June - July 2021
 # Description: filter a VCF fiile of SNPs from Stacks or ipyrad using the dartR package
 # NOTE: this only works for loci with two alleles; also, ideally, the data will already be one SNP per locus
 # but this script has a built in filter to remove SNPs from the same chromosome slot
@@ -209,8 +209,10 @@ genl@other$loc.metrics$rdepth <- avgdepths[match(locNames(genl), rownames(avgdep
 # now remove any loci that have an NA in read depth
 # NOTE: I'm not sure why this happens, but it may be because the genlight has loci that had zero read depth(?)
 rm_list <- locNames(genl)[is.na(genl@other$loc.metrics$rdepth)]
-cat("Dropping", length(rm_list), "loci without read depth information\n")
-genl <- gl.drop.loc(genl, loc.list = rm_list, verbose = 0)
+if (length(rm_list) > 0) {
+	cat("Dropping", length(rm_list), "loci without read depth information\n")
+	genl <- gl.drop.loc(genl, loc.list = rm_list, verbose = 0)
+}
 
 
 
