@@ -13,11 +13,11 @@
 remove_outgroupZ <- TRUE	# set to remove outgroup samples which have a "Z" in their names
 remove_replicates <- TRUE	# set to remove replicate samples which have an "_R" at the end of the common text
 rep_thresh <- 0.8		# set the reproducibility threshold (NOTE: sensitive to number of reps included)
-missing_loc_thresh <- 0.5	# set the call rate by locus threshold (min proportion of samples with a locus)
+missing_loc_thresh <- 0.9	# set the call rate by locus threshold (min proportion of samples with a locus)
 missing_ind_thresh <- 0.2	# set the call rate by individual threshold (min proportion of loci per individual)
-minor_allele_thresh <- 0.02	# set the minor allele threshold (min frequency of allele)
-lower_rdepth <- 5		# set lower read depth threshold (min read depth for a SNP)
-upper_rdepth <- 200		# set upper read depth threshold (max read depth for a SNP)
+minor_allele_thresh <- 0.01	# set the minor allele threshold (min frequency of allele)
+lower_rdepth <- 10		# set lower read depth threshold (min read depth for a SNP)
+upper_rdepth <- 400		# set upper read depth threshold (max read depth for a SNP)
 output_structure <- FALSE	# set whether to output a Structure format file
 output_faststructure <- FALSE	# set whether to output a Faststructure format file
 output_snapp <- FALSE		# set whether to output a binary nexus for SNAPP
@@ -140,6 +140,7 @@ genl
 
 
 # assign correct sample names and population labels to the genlight object if needed
+# ALSO: filter the genlight to only retain samples present in the sample table
 # format1 = id	sample_name	pop
 # format2 = id	pop
 # (format2 is for when the id = desired sample name)
@@ -147,7 +148,11 @@ if (ncol(sample_table) != 2) {
 	indNames(genl) <- sample_table$V2[match(indNames(genl), sample_table$V1)]
 	pop(genl) <- sample_table$V3[match(indNames(genl), sample_table$V2)]
 } else {
+	indNames(genl) <- sample_table$V1[match(indNames(genl), sample_table$V1)]
 	pop(genl) <- sample_table$V2[match(indNames(genl), sample_table$V1)]
+}
+if (length(indNames(genl)[is.na(indNames(genl))]) > 0) {		# if there are any NAs (non-matches)
+	genl <- genl[!is.na(indNames(genl)), ]
 }
 
 
@@ -192,10 +197,94 @@ gl.plot(genl, verbose = 0)
 dev.off()
 
 
+
+####### Outgroups
+# determine names of outgroup samples and remove them if requested,
+if (remove_outgroupZ) {
+	outgroups <- indNames(genl)[grep("Z", indNames(genl))]
+	cat("Dropping", length(outgroups), "outgroup samples\n")
+	genl <- gl.drop.ind(genl, ind.list = outgroups, verbose = 0)
+}
+
+
+
+####### Replicates
+# determine names of replicate pairs
+reps <- grep("_R", indNames(genl), value = TRUE)
+if (length(reps) > 0) {
+	fewer_names <- grep("_R", indNames(genl), value = TRUE, invert = TRUE)
+	samps <- fewer_names[pmatch(sub("_R.*", "", reps), fewer_names)]
+
+	# run reproducibility, originally based on ideas from script/paper by Kate Farquaharson
+	cat("Running reproducibility assessment\n")
+	pairs <- cbind(reps, samps)
+	pairs <- pairs[rowSums(is.na(pairs)) < 1, ]			# remove rows with missing pairs
+	npairs <- nrow(pairs)
+	sub_genl <- genl[match(c(pairs), indNames(genl))]		# create a genlight object with only rep pairs
+
+	# for each locus/SNP, for each pair determine whethere they differ
+	# then enter an error for that locus for that pair
+	# then compare all the errors vs non-errors for pairs in that locus
+	# add a value to a new dataframe for that locus as reproducibility
+	# NOTE: I have slightly altered the original (I think) to count when one read is NA and the other isn't as an error
+	# NOTE: this approach will create a ratio that is HIGHLY dependent on how many reps are present
+	# so the filter applied should be carefully adjusted; I will add a report on what one error = in reproducibility
+	df_repro <- data.frame(locus = locNames(sub_genl), RepAvg = double(length(locNames(sub_genl))),
+				stringsAsFactors = FALSE)
+	calls <- as.matrix(sub_genl)
+	for (locus_ind in 1: length(locNames(sub_genl))) {	# for each locus
+		lcalls <- calls[, locus_ind]
+		errors <- vector("list", npairs)
+		for (row in 1: npairs) {		# for each replicate pair
+			callA <- lcalls[pairs[[row, 1]]]	# call for indA
+			callB <- lcalls[pairs[[row, 2]]]	# call for indB
+			if (is.na(callA)) {		# if there is no read for indA, assign a number for comparison
+				callA <- 5
+			}
+			if (is.na(callB)) {		# if there is no read for indB, assign a number for comparison
+				callB <- 5
+			}
+			if (callA != callB) {
+				errors[[row]] <- 1
+			} else {
+				errors[[row]] <- 0
+			}
+		}
+		# now, sum the errors, then divide by number of reps for reproducibility metric for that SNP
+		# NOTE: this assumes that two missing reads are a correct call (wrong); same as in original
+		repro <- 1 - (sum(unlist(errors)) / npairs) 
+		# add to the dataframe
+		#df_repro[locus_ind, "locus"] <- locNames(sub_genl)[locus_ind]
+		df_repro[locus_ind, "RepAvg"] <- as.double(repro)	
+	}
+
+	# add the values to the genlight object
+	genl@other$loc.metrics$RepAvg <- df_repro$RepAvg[match(locNames(genl), df_repro$locus)]
+
+	# report results of reproducibility assessment
+	cat("Reproducibility summary:\n")
+	summary(df_repro$RepAvg)
+	repro_lower <- length(df_repro$RepAvg[df_repro$RepAvg < 1])
+	repro_one <- 1 - (1 / npairs)
+	cat("There are", repro_lower, "of", nrow(df_repro), "SNPs with less than 100% reproducibility\n")
+	cat("A single error reduces reproducibility to", repro_one, "\n")
+} else {
+	cat("No replicates for reproducibility assessment\n")
+}
+
+
+# remove the replicates from the dataset, if requested
+if (length(reps) > 0 & remove_replicates) {
+	cat("Dropping", length(reps), "replicate samples\n")
+	genl <- gl.drop.ind(genl, ind.list = reps, verbose = 0)
+}
+
+
 # calculate average read depth per locus from metadata and attach it to the genlight object
 # NOTE: in ipyrad output (VCF 4.0), there is no "AD"=allele depth, so would have to parse out the data used by Kym 
 # I don't think it matters, since dartR is only using an average depth for all alleles anyway
 depths <- extract.gt(vcf, element = "DP", as.numeric = TRUE)
+depths <- depths[, !is.na(match(indNames(genl), colnames(depths)))]	# only keep for samples in the genl
 depths[depths == 0] <- NA		# turn all zero depth values to NA for ignoring
 avgdepths <- data.frame(round(rowMeans(depths, na.rm = TRUE), 1))
 avgdepths <- subset(avgdepths, !(is.na(avgdepths)))
@@ -212,86 +301,6 @@ rm_list <- locNames(genl)[is.na(genl@other$loc.metrics$rdepth)]
 if (length(rm_list) > 0) {
 	cat("Dropping", length(rm_list), "loci without read depth information\n")
 	genl <- gl.drop.loc(genl, loc.list = rm_list, verbose = 0)
-}
-
-
-
-####### Outgroups
-# determine names of outgroup samples and remove them if requested,
-if (remove_outgroupZ) {
-	outgroups <- indNames(genl)[grep("Z", indNames(genl))]
-	cat("Dropping", length(outgroups), "outgroup samples\n")
-	genl <- gl.drop.ind(genl, ind.list = outgroups, verbose = 0)
-}
-
-
-
-####### Replicates
-# determine names of replicate pairs
-reps <- grep("_R", indNames(genl), value = TRUE)
-fewer_names <- grep("_R", indNames(genl), value = TRUE, invert = TRUE)
-samps <- fewer_names[pmatch(sub("_R.*", "", reps), fewer_names)]
-
-
-# run reproducibility, originally based on ideas from script/paper by Kate Farquaharson
-cat("Running reproducibility assessment\n")
-pairs <- cbind(reps, samps)
-pairs <- pairs[rowSums(is.na(pairs)) < 1, ]			# remove rows with missing pairs
-npairs <- nrow(pairs)
-sub_genl <- genl[match(c(pairs), indNames(genl))]		# create a genlight object with only rep pairs
-
-# for each locus/SNP, for each pair determine whethere they differ
-# then enter an error for that locus for that pair
-# then compare all the errors vs non-errors for pairs in that locus
-# add a value to a new dataframe for that locus as reproducibility
-# NOTE: I have slightly altered the original (I think) to count when one read is NA and the other isn't as an error
-# NOTE: this approach will create a ratio that is HIGHLY dependent on how many reps are present
-# so the filter applied should be carefully adjusted; I will add a report on what one error = in reproducibility
-df_repro <- data.frame(locus = locNames(sub_genl), RepAvg = double(length(locNames(sub_genl))),
-			stringsAsFactors = FALSE)
-calls <- as.matrix(sub_genl)
-for (locus_ind in 1: length(locNames(sub_genl))) {	# for each locus
-	lcalls <- calls[, locus_ind]
-	errors <- vector("list", npairs)
-	for (row in 1: npairs) {		# for each replicate pair
-		callA <- lcalls[pairs[[row, 1]]]	# call for indA
-		callB <- lcalls[pairs[[row, 2]]]	# call for indB
-		if (is.na(callA)) {		# if there is no read for indA, assign a number for comparison
-			callA <- 5
-		}
-		if (is.na(callB)) {		# if there is no read for indB, assign a number for comparison
-			callB <- 5
-		}
-		if (callA != callB) {
-			errors[[row]] <- 1
-		} else {
-			errors[[row]] <- 0
-		}
-	}
-	# now, sum the errors, then divide by number of reps for reproducibility metric for that SNP
-	# NOTE: this assumes that two missing reads are a correct call (wrong); same as in original
-	repro <- 1 - (sum(unlist(errors)) / npairs) 
-	# add to the dataframe
-	#df_repro[locus_ind, "locus"] <- locNames(sub_genl)[locus_ind]
-	df_repro[locus_ind, "RepAvg"] <- as.double(repro)	
-}
-
-# add the values to the genlight object
-genl@other$loc.metrics$RepAvg <- df_repro$RepAvg[match(locNames(genl), df_repro$locus)]
-
-# report results of reproducibility assessment
-cat("Reproducibility summary:\n")
-summary(df_repro$RepAvg)
-repro_lower <- length(df_repro$RepAvg[df_repro$RepAvg < 1])
-repro_one <- 1 - (1 / npairs)
-cat("There are", repro_lower, "of", nrow(df_repro), "SNPs with less than 100% reproducibility\n")
-cat("A single error reduces reproducibility to", repro_one, "\n")
-
-
-# remove the replicates from the dataset, if requested
-if (remove_replicates) {
-	cat("Dropping", length(reps), "replicate samples\n")
-	genl <- gl.drop.ind(genl, ind.list = reps, verbose = 0)
 }
 
 
@@ -331,12 +340,17 @@ hist.homref = hist(genl@other$loc.metrics$FreqHomRef)	# homozygous for ref allel
 hist.homsnp = hist(genl@other$loc.metrics$FreqHomSnp)	# homozygous for alt allele
 hist.maf = hist(genl@other$loc.metrics$maf)		# minor allele frequency
 outliers_pre <- gl.report.rdepth(genl, verbose = 0)
+if (nrow(outliers_pre) > 0) {
+	cat("There were", nrow(outliers_pre), "read depth outliers detected\n")
+}
 dev.off()
 
 
 # Apply filters on loci metrics
 filter <- genl
-filter <- gl.filter.reproducibility(filter, threshold = rep_thresh, verbose = 3)
+if (length(reps) > 0) {
+	filter <- gl.filter.reproducibility(filter, threshold = rep_thresh, verbose = 3)
+}
 filter <- gl.filter.callrate(filter, method = "loc", threshold = missing_loc_thresh,
 			plot = FALSE, verbose = 3)
 filter <- gl.filter.callrate(filter, method = "ind", threshold = missing_ind_thresh, 
@@ -363,6 +377,9 @@ hist.homref = hist(data@other$loc.metrics$FreqHomRef)	# homozygous for ref allel
 hist.homsnp = hist(data@other$loc.metrics$FreqHomSnp)	# homozygous for alt allele
 hist.maf = hist(data@other$loc.metrics$maf)		# minor allele frequency
 outliers_post <- gl.report.rdepth(data, verbose = 0)
+if (nrow(outliers_post) > 0) {
+	cat("There were", nrow(outliers_post), "read depth outliers detected\n")
+}
 dev.off()
 
 
