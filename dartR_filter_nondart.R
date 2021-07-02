@@ -204,10 +204,11 @@ dev.off()
 # determine names of outgroup samples and remove them if requested,
 if (remove_outgroupZ) {
 	outgroups <- indNames(genl)[grep("Z", indNames(genl))]
-	cat("Dropping", length(outgroups), "outgroup samples\n")
-	original_indNames <- original_indNames[grep("Z", indNames(genl), invert = TRUE)]
-	genl <- gl.drop.ind(genl, ind.list = outgroups, verbose = 0)
-	#cat("Length indNames:", length(indNames(genl)), " Length original_indNames:", length(original_indNames))
+	if (length(outgroups) > 0) {
+		cat("Dropping", length(outgroups), "outgroup samples\n")
+		original_indNames <- original_indNames[grep("Z", indNames(genl), invert = TRUE)]
+		genl <- gl.drop.ind(genl, ind.list = outgroups, verbose = 0)
+	}
 }
 
 
