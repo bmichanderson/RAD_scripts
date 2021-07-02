@@ -144,6 +144,7 @@ genl
 # format1 = id	sample_name	pop
 # format2 = id	pop
 # (format2 is for when the id = desired sample name)
+original_indNames <- indNames(genl)
 if (ncol(sample_table) != 2) {
 	indNames(genl) <- sample_table$V2[match(indNames(genl), sample_table$V1)]
 	pop(genl) <- sample_table$V3[match(indNames(genl), sample_table$V2)]
@@ -152,6 +153,7 @@ if (ncol(sample_table) != 2) {
 	pop(genl) <- sample_table$V2[match(indNames(genl), sample_table$V1)]
 }
 if (length(indNames(genl)[is.na(indNames(genl))]) > 0) {		# if there are any NAs (non-matches)
+	original_indNames <- original_indNames[!is.na(indNames(genl))]	# to make sure later vcf data matches
 	genl <- genl[!is.na(indNames(genl)), ]
 }
 
@@ -187,7 +189,7 @@ alleles <- alleles[grep(",", alleles$ALT, invert = TRUE), ]		# exclude multi-all
 alleles$all <- with(alleles, paste0(REF, "/", ALT))
 
 # now fill the loc.all slot with values
-genl@loc.all <- alleles$all[match(locNames(genl), alleles$ID)]
+genl@loc.all <- alleles$all[match(original_indNames, alleles$ID)]
 
 
 # plot an initial visualization of the data
@@ -203,7 +205,9 @@ dev.off()
 if (remove_outgroupZ) {
 	outgroups <- indNames(genl)[grep("Z", indNames(genl))]
 	cat("Dropping", length(outgroups), "outgroup samples\n")
+	original_indNames <- original_indNames[grep("Z", indNames(genl), invert = TRUE)]
 	genl <- gl.drop.ind(genl, ind.list = outgroups, verbose = 0)
+	#cat("Length indNames:", length(indNames(genl)), " Length original_indNames:", length(original_indNames))
 }
 
 
@@ -222,8 +226,8 @@ if (length(reps) > 0) {
 	npairs <- nrow(pairs)
 	sub_genl <- genl[match(c(pairs), indNames(genl))]		# create a genlight object with only rep pairs
 
-	# for each locus/SNP, for each pair determine whethere they differ
-	# then enter an error for that locus for that pair
+	# for each locus/SNP, for each pair determine whether they differ
+	# then enter an error value for that locus for that pair
 	# then compare all the errors vs non-errors for pairs in that locus
 	# add a value to a new dataframe for that locus as reproducibility
 	# NOTE: I have slightly altered the original (I think) to count when one read is NA and the other isn't as an error
@@ -254,7 +258,6 @@ if (length(reps) > 0) {
 		# NOTE: this assumes that two missing reads are a correct call (wrong); same as in original
 		repro <- 1 - (sum(unlist(errors)) / npairs) 
 		# add to the dataframe
-		#df_repro[locus_ind, "locus"] <- locNames(sub_genl)[locus_ind]
 		df_repro[locus_ind, "RepAvg"] <- as.double(repro)	
 	}
 
@@ -276,7 +279,9 @@ if (length(reps) > 0) {
 # remove the replicates from the dataset, if requested
 if (length(reps) > 0 & remove_replicates) {
 	cat("Dropping", length(reps), "replicate samples\n")
+	original_indNames <- original_indNames[grep("_R", indNames(genl), invert = TRUE)]
 	genl <- gl.drop.ind(genl, ind.list = reps, verbose = 0)
+	#cat("Length indNames:", length(indNames(genl)), " Length original_indNames:", length(original_indNames))
 }
 
 
@@ -284,7 +289,7 @@ if (length(reps) > 0 & remove_replicates) {
 # NOTE: in ipyrad output (VCF 4.0), there is no "AD"=allele depth, so would have to parse out the data used by Kym 
 # I don't think it matters, since dartR is only using an average depth for all alleles anyway
 depths <- extract.gt(vcf, element = "DP", as.numeric = TRUE)
-depths <- depths[, !is.na(match(indNames(genl), colnames(depths)))]	# only keep for samples in the genl
+depths <- depths[, !is.na(match(original_indNames, colnames(depths)))]	# only keep for samples in the genl
 depths[depths == 0] <- NA		# turn all zero depth values to NA for ignoring
 avgdepths <- data.frame(round(rowMeans(depths, na.rm = TRUE), 1))
 avgdepths <- subset(avgdepths, !(is.na(avgdepths)))
@@ -296,7 +301,7 @@ avgdepths <- subset(avgdepths, rownames(avgdepths) %in% locNames(genl))
 genl@other$loc.metrics$rdepth <- avgdepths[match(locNames(genl), rownames(avgdepths)), ]
 
 # now remove any loci that have an NA in read depth
-# NOTE: I'm not sure why this happens, but it may be because the genlight has loci that had zero read depth(?)
+# NOTE: I'm not sure why this sometimes happens, possibly because the genlight has loci that had zero read depth?
 rm_list <- locNames(genl)[is.na(genl@other$loc.metrics$rdepth)]
 if (length(rm_list) > 0) {
 	cat("Dropping", length(rm_list), "loci without read depth information\n")
@@ -340,9 +345,6 @@ hist.homref = hist(genl@other$loc.metrics$FreqHomRef)	# homozygous for ref allel
 hist.homsnp = hist(genl@other$loc.metrics$FreqHomSnp)	# homozygous for alt allele
 hist.maf = hist(genl@other$loc.metrics$maf)		# minor allele frequency
 outliers_pre <- gl.report.rdepth(genl, verbose = 0)
-if (nrow(outliers_pre) > 0) {
-	cat("There were", nrow(outliers_pre), "read depth outliers detected\n")
-}
 dev.off()
 
 
@@ -377,9 +379,6 @@ hist.homref = hist(data@other$loc.metrics$FreqHomRef)	# homozygous for ref allel
 hist.homsnp = hist(data@other$loc.metrics$FreqHomSnp)	# homozygous for alt allele
 hist.maf = hist(data@other$loc.metrics$maf)		# minor allele frequency
 outliers_post <- gl.report.rdepth(data, verbose = 0)
-if (nrow(outliers_post) > 0) {
-	cat("There were", nrow(outliers_post), "read depth outliers detected\n")
-}
 dev.off()
 
 
@@ -388,8 +387,8 @@ pdf(paste0(output, "_pcoa_nj.pdf"), paper = "A4")
 
 # create a pcoa
 pcoa <- gl.pcoa(data, nfactors = 3)
-gl.pcoa.scree(pcoa)
-gl.pcoa.plot(pcoa, data, labels = "pop", xaxis = 1, yaxis = 2)
+#gl.pcoa.scree(pcoa)
+pcoa_coords <- gl.pcoa.plot(pcoa, data, labels = "pop", plot.out = FALSE, xaxis = 1, yaxis = 2)
 
 # create a NJ tree
 njtree <- njs(dist(as.matrix(data)))		# njs allows missing data
