@@ -1,14 +1,14 @@
 
 ##########
 # Authors: Rachel Binks and Ben Anderson, based on scripts from Mastretta-Yanes et al. 2015
-# Date: June-July 2021
+# Date: June-July-Aug 2021
 # Description: run Mastretta-Yanes et al. error estimation for technical replicates
 ##########
 
 
 # Define any parameters that may need to be changed by users
 
-min_present_rate <- 0.7		# the minimum proportion of samples a SNP must be in (for distances, not error)
+min_present_rate <- 0.1		# the minimum proportion of samples a SNP must be in (for distances, not error)
 
 
 
@@ -218,6 +218,13 @@ if (reps_present) {
 }
 
 
+
+#
+### Add filter for one per locus ?
+#
+
+
+
 # Filter on missing data
 cat("Filtering for a minimum sample coverage of", min_present_rate, "to keep a SNP\n")
 check_mat <- as.matrix(genl)
@@ -262,30 +269,30 @@ write.table(dists_df, file = paste0(outpre, "_dist_table.tab"), sep = "\t", quot
 ##########
 
 # create a PCoA to display how well populations are clustering and proportion of variation explained
-cat("Running a PCoA based on the genlight\n")
-pca_df <- as.data.frame(matrix(nrow = 1, ncol = 4))
-colnames(pca_df) <- c("PC1", "PC2", "PC3", "PC4")
-pca <- glPca(genl, nf = 4, loadings = FALSE, parallel = TRUE, n.cores = 4)
+#cat("Running a PCoA based on the genlight\n")
+#pca_df <- as.data.frame(matrix(nrow = 1, ncol = 4))
+#colnames(pca_df) <- c("PC1", "PC2", "PC3", "PC4")
+#pca <- glPca(genl, nf = 4, loadings = FALSE, parallel = TRUE, n.cores = 4)
 
 # percentage variation from eigenvalues
-perc_eig <- 100 * pca$eig / sum(pca$eig)
+#perc_eig <- 100 * pca$eig / sum(pca$eig)
 
 # capture the first four PCs % contribution
-pca_df[1, ] <- perc_eig[1:4]
+#pca_df[1, ] <- perc_eig[1:4]
 
 # Write the resulting file and the PCoA scores with populations for plotting after
-write.table(pca_df, file = paste0(outpre, "_pca_table.tab"), sep = "\t", quote = FALSE, row.names = FALSE)
-write.table(pca$scores, file = paste0(outpre, "_pca_scores.tab"), sep = "\t", quote = FALSE, 
-		row.names = TRUE, col.names = TRUE)
-write.table(populations, file = paste0(outpre, "_pca_pops.tab"), sep = "\t", quote = FALSE, 
-		row.names = FALSE, col.names = FALSE)
+#write.table(pca_df, file = paste0(outpre, "_pca_table.tab"), sep = "\t", quote = FALSE, row.names = FALSE)
+#write.table(pca$scores, file = paste0(outpre, "_pca_scores.tab"), sep = "\t", quote = FALSE, 
+#		row.names = TRUE, col.names = TRUE)
+#write.table(populations, file = paste0(outpre, "_pca_pops.tab"), sep = "\t", quote = FALSE, 
+#		row.names = FALSE, col.names = FALSE)
 
 
 
 # Report that the script has finished
 if (reps_present) {
-	cat("Finished running MY replicate error assessment and intrapopulation Euclidean distances and PCoA\n")
+	cat("Finished running MY replicate error assessment and intrapopulation Euclidean distances\n")
 } else {
-	cat("Finished running MY intrapopulation Euclidean distances and PCoA\n")
+	cat("Finished running MY intrapopulation Euclidean distances\n")
 }
 

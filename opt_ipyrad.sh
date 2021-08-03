@@ -129,14 +129,18 @@ echo -e "\nStarting at $(date)\n"
 # Create text files across parameter values to plot with the R script
 ########
 
-# 1 Proportion inferred paralogues
-# (requires the final *_stats.txt file from ipyrad step 7
+# 1 Proportion inferred paralogs -- could potentially be measured in different ways (?)
+# A) requires the final *_stats.txt file from ipyrad step 7
 # We grab fields 3 and 4 of the first table, which correspond to number flagged for hets out of total after filter
+# B) uses the s5 stats file for individual samples
+# We need to grab the filter by hets and max alleles (fields 4 and 5) as well as the total (field 2)
+# minus the amount filtered by depth (field 3)
 for num in $(seq $param_range)
 do
-	echo "$num" >> temp1 && \
 	grep "max_shared_het" clust_"$num"/"$name_prefix"_"$num"_stats.txt | \
-	tr -s " " "\t" | cut -f 3,4 | sed "s/^/$num\t/" >> "$out_prefix"_paralogs.tab
+	tr -s " " "\t" | cut -f 3,4 | sed "s/^/$num\t/" >> "$out_prefix"_paralogs1.tab && \
+	tail -n +2 clust_"$num"/s5_consens*.txt | \
+	tr -s " " "\t" | cut -f 2,3,4,5 | sed "s/^/$num\t/" >> "$out_prefix"_paralogs2.tab
 done
 
 
@@ -174,8 +178,9 @@ done
 
 # Plot them with the R script
 
-Rscript "$MM_script" -p "$out_prefix"_paralogs.tab -h "$out_prefix"_heterozygosity.tab \
-	-l "$out_prefix"_loci_snps.tab -e "$out_prefix"_seqerror.tab -o "$out_prefix"
+Rscript "$MM_script" -p1 "$out_prefix"_paralogs1.tab -p2 "$out_prefix"_paralogs2.tab \
+	-h "$out_prefix"_heterozygosity.tab -l "$out_prefix"_loci_snps.tab \
+	-e "$out_prefix"_seqerror.tab -o "$out_prefix"
 
 
 
@@ -183,6 +188,10 @@ Rscript "$MM_script" -p "$out_prefix"_paralogs.tab -h "$out_prefix"_heterozygosi
 ########
 # Create a list of the vcf files and submit to the R script for processing
 ########
+
+if [ -f "$out_prefix"_vcf_list.txt ]; then
+	rm "$out_prefix"_vcf_list.txt
+fi
 
 for num in $(seq $param_range)
 do
@@ -192,6 +201,11 @@ done
 
 # create the input samples file from the submitted one
 cut -f 1,3,4 "$samp_file" > temp_samp_file.tab
+
+# If wanting to exclude outgroups for this step, can submit a different sample file:
+# e.g. grep -v "Z" temp_samp_file.tab > new_sampe_file.tab
+
+
 
 
 # Run the analyses and plot results
@@ -273,9 +287,7 @@ fi
 cut -f 1,2 "$samp_file" > temp_samp_file.tab
 
 # If wanting to exclude outgroups for this step, can submit a different sample file:
-#
-#cut -f 1,2 "$samp_file" | grep -v "Z" > temp_samp_file.tab
-#
+# e.g. grep -v "Z" temp_samp_file.tab > new_sampe_file.tab
 
 echo -e "\nRunning Mastretta-Yanes et al. error estimation (if reps present) and Euclidean distances\n"
 
@@ -295,12 +307,12 @@ do
 	rm temp_dist_table.tab
 
 	# also grab the PCoA information
-	for file in temp*pca*.tab
-	do
-		mv "$file" "${file/temp/$num}"
-	done
-	tail -n +2 "${num}_pca_table.tab" | sed "s/^/$num\t/" > "pca_table_${num}.tab"		# omit header
-	rm "${num}_pca_table.tab"
+#	for file in temp*pca*.tab
+#	do
+#		mv "$file" "${file/temp/$num}"
+#	done
+#	tail -n +2 "${num}_pca_table.tab" | sed "s/^/$num\t/" > "pca_table_${num}.tab"		# omit header
+#	rm "${num}_pca_table.tab"
 done
 
 # concatenate the files together and submit to the R script for plotting
@@ -309,15 +321,15 @@ if [ "$reps_present" == "yes" ]; then
 	rm error_table_*.tab
 fi
 cat dist_table_*.tab > "$out_prefix"_dist_tables.tab
-cat pca_table_*.tab > "$out_prefix"_pca_tables.tab
-rm dist_table_*.tab pca_table_*.tab
+#cat pca_table_*.tab > "$out_prefix"_pca_tables.tab
+rm dist_table_*.tab #pca_table_*.tab
 
 if [ "$reps_present" == "yes" ]; then
 	Rscript "$MM_script" --merror "$out_prefix"_error_tables.tab --mdist "$out_prefix"_dist_tables.tab \
-		--mpca "$out_prefix"_pca_tables.tab -o "$out_prefix" -s temp_samp_file.tab
+		-o "$out_prefix" -s temp_samp_file.tab #--mpca "$out_prefix"_pca_tables.tab
 else
-	Rscript "$MM_script" --mdist "$out_prefix"_dist_tables.tab --mpca "$out_prefix"_pca_tables.tab \
-		-o "$out_prefix" -s temp_samp_file.tab
+	Rscript "$MM_script" --mdist "$out_prefix"_dist_tables.tab \
+		-o "$out_prefix" -s temp_samp_file.tab #--mpca "$out_prefix"_pca_tables.tab
 fi
 
 rm temp_samp_file.tab
