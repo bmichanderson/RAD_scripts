@@ -184,38 +184,6 @@ Rscript "$MM_script" -p1 "$out_prefix"_paralogs1.tab -p2 "$out_prefix"_paralogs2
 
 
 
-
-########
-# Create a list of the vcf files and submit to the R script for processing
-########
-
-if [ -f "$out_prefix"_vcf_list.txt ]; then
-	rm "$out_prefix"_vcf_list.txt
-fi
-
-for num in $(seq $param_range)
-do
-	echo -e "${num}\tclust_${num}/${name_prefix}_${num}.vcf" >> "$out_prefix"_vcf_list.txt
-done
-
-
-# create the input samples file from the submitted one
-cut -f 1,3,4 "$samp_file" > temp_samp_file.tab
-
-# If wanting to exclude outgroups for this step, can submit a different sample file:
-# e.g. grep -v "Z" temp_samp_file.tab > new_sampe_file.tab
-
-
-
-
-# Run the analyses and plot results
-echo -e "\nRunning analyses of vcf files to determine variation in PCoAs and relationships between" \
-	"missing data and genetic distance, and geographic distance and genetic distance\n"
-Rscript "$MM_script" -v "$out_prefix"_vcf_list.txt -o "$out_prefix" -s temp_samp_file.tab
-
-
-
-
 ########
 # Phylogenetic trees
 ########
@@ -279,7 +247,7 @@ fi
 
 
 ########
-# Run Mastretta-Yanes error estimation and Euclidean distances
+# Run Mastretta-Yanes et al. error estimation and Euclidean distances
 ########
 
 
@@ -287,9 +255,10 @@ fi
 cut -f 1,2 "$samp_file" > temp_samp_file.tab
 
 # If wanting to exclude outgroups for this step, can submit a different sample file:
-# e.g. grep -v "Z" temp_samp_file.tab > new_sampe_file.tab
+# e.g. grep -v "Z" temp_samp_file.tab > new_samp_file.tab
 
-echo -e "\nRunning Mastretta-Yanes et al. error estimation (if reps present) and Euclidean distances\n"
+
+echo -e "\nRunning Mastretta-Yanes et al. error estimation (if reps present) and Euclidean pop distances\n"
 
 # Submit each vcf file to the script, along with the sample file, then move the output to unique named files
 for num in $(seq $param_range)
@@ -305,14 +274,6 @@ do
 	fi
 	tail -n +2 temp_dist_table.tab | sed "s/^/$num\t/" > "dist_table_${num}.tab"
 	rm temp_dist_table.tab
-
-	# also grab the PCoA information
-#	for file in temp*pca*.tab
-#	do
-#		mv "$file" "${file/temp/$num}"
-#	done
-#	tail -n +2 "${num}_pca_table.tab" | sed "s/^/$num\t/" > "pca_table_${num}.tab"		# omit header
-#	rm "${num}_pca_table.tab"
 done
 
 # concatenate the files together and submit to the R script for plotting
@@ -321,17 +282,48 @@ if [ "$reps_present" == "yes" ]; then
 	rm error_table_*.tab
 fi
 cat dist_table_*.tab > "$out_prefix"_dist_tables.tab
-#cat pca_table_*.tab > "$out_prefix"_pca_tables.tab
-rm dist_table_*.tab #pca_table_*.tab
+rm dist_table_*.tab
 
 if [ "$reps_present" == "yes" ]; then
-	Rscript "$MM_script" --merror "$out_prefix"_error_tables.tab --mdist "$out_prefix"_dist_tables.tab \
-		-o "$out_prefix" -s temp_samp_file.tab #--mpca "$out_prefix"_pca_tables.tab
+	Rscript "$MM_script" -merr "$out_prefix"_error_tables.tab -mdis "$out_prefix"_dist_tables.tab \
+		-o "$out_prefix" -s temp_samp_file.tab
 else
-	Rscript "$MM_script" --mdist "$out_prefix"_dist_tables.tab \
-		-o "$out_prefix" -s temp_samp_file.tab #--mpca "$out_prefix"_pca_tables.tab
+	Rscript "$MM_script" -mdis "$out_prefix"_dist_tables.tab \
+		-o "$out_prefix" -s temp_samp_file.tab
 fi
 
 rm temp_samp_file.tab
+
+
+
+########
+# Create a list of the vcf files and submit to the R script for processing
+########
+
+if [ -f "$out_prefix"_vcf_list.txt ]; then
+	rm "$out_prefix"_vcf_list.txt
+fi
+
+for num in $(seq $param_range)
+do
+	echo -e "${num}\tclust_${num}/${name_prefix}_${num}.vcf" >> "$out_prefix"_vcf_list.txt
+done
+
+
+# create the input samples file from the submitted one
+cut -f 1,3,4 "$samp_file" > temp_samp_file.tab
+
+# If wanting to exclude outgroups for this step, can submit a different sample file:
+# e.g. grep -v "Z" temp_samp_file.tab > new_sampe_file.tab
+
+
+# Run the analyses and plot results
+echo -e "\nRunning analyses of vcf files to determine variation in PCoAs and relationships between" \
+	"missing data and geographic distance vs. genomic similarity\n"
+Rscript "$MM_script" -v "$out_prefix"_vcf_list.txt -o "$out_prefix" -s temp_samp_file.tab
+
+
+rm temp_samp_file.tab
+
 
 echo -e "\nFinished at $(date)!\n"
