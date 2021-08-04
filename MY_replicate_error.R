@@ -8,8 +8,7 @@
 
 # Define any parameters that may need to be changed by users
 
-min_present_rate <- 0.1		# the minimum proportion of samples a SNP must be in (for distances, not error)
-
+min_present_rate <- 0.0		# the minimum proportion of samples a SNP must be in (for distances, not error)
 
 
 # a helper function for when the script is called without arguments
@@ -88,14 +87,16 @@ suppressMessages(library(adegenet))
 # read in the input files
 sample_table <- read.table(samples_file, sep = "\t", header = FALSE)
 myvcf <- read.vcfR(vcf_file, verbose = FALSE)
-genl <- vcfR2genlight(myvcf)		# convert to genlight object
-genl			# print a summary of the object
+genl <- suppressWarnings(vcfR2genlight(myvcf))		# convert to genlight object
+#genl			# print a summary of the object
+
 
 # assign correct sample names and population labels to the genlight object
 # and filter the genlight to only retain samples present in the sample table
 # format1 = id  sample_name     pop		(if vcf ids need to be renamed)
 # format2 = id  pop				(if vcf ids = sample names already)
 original_names <- genl@ind.names
+len_original <- length(original_names)
 if (ncol(sample_table) != 2) {
 	genl@ind.names <- sample_table$V2[match(genl@ind.names, sample_table$V1)]
 	populations <- sample_table$V3[match(genl@ind.names, sample_table$V2)]
@@ -108,10 +109,31 @@ if (length(genl@ind.names[is.na(genl@ind.names)]) > 0) {		# if there are any NAs
 	populations <- populations[!is.na(genl@ind.names)]
 	genl <- genl[!is.na(genl@ind.names), ]
 }
+len_new <- length(genl@ind.names)
+cat("Retained", length(genl@loc.names), "SNPs from the VCF file\n")
+cat("Removed", len_original - len_new, "samples not present in the input sample table\n")
 
 
-# NOTE: I don't think we should do any filtering for missing data, as part of the error
-# test is to see whether loci are called in one replicate but not the other
+# Remove monomorphic SNPs if samples have been removed
+if (len_original > len_new) {
+	gl_matrix <- as.matrix(genl)
+	loc_list <- array(NA, nLoc(genl))
+	for (index in 1: nLoc(genl)) {
+		row <- gl_matrix[, index]
+		if (all(row == 0, na.rm = TRUE) | all(row == 2, na.rm = TRUE)
+		| all(row == 1, na.rm = TRUE) | all(is.na(row))) {
+			loc_list[index] <- genl@loc.names[index]
+		}
+	}
+	loc_list <- loc_list[!is.na(loc_list)]
+	if (length(loc_list) > 0) {
+		cat("Dropping", length(loc_list), "monomorphic or all NA loci\n")
+		genl <- genl[, is.na(match(genl@loc.names, loc_list))]
+	} else {
+		cat("There are no monomorphic loci\n")
+	}
+	cat("Retained", length(genl@loc.names), "SNPs\n")
+}
 
 
 ######## Locus, allele and SNP error rates
@@ -120,11 +142,11 @@ if (length(genl@ind.names[is.na(genl@ind.names)]) > 0) {		# if there are any NAs
 ## I think it might make more sense to be relative to the total possible comparisons between the two
 # allele error rate: if the locus is in both but differs (by at least one SNP) relative to total present, and
 # SNP error rate: if a SNP is found in both and differs (there may be multiple SNPs per locus) relative to total
-
 # If we use VCF input, then we get locus error rate from looking at "chromosome" field
 # If we only output one SNP per locus, allele error rate == SNP error rate
 
 # determine names of replicate pairs if reps are present, then run error rate calculations
+cat("Running error estimation\n")
 if (reps_present) {
 	reps <- grep("_R", genl@ind.names, value = TRUE)
 	nonreps <- grep("_R", genl@ind.names, value = TRUE, invert = TRUE)
@@ -185,7 +207,7 @@ if (reps_present) {
 		# SNP
 		# all SNPs comparable, but no NA as differences
 		comp_mat <- as.matrix(alle_genl)
-		comp_mat <- comp_mat[, colSums(is.na(comp_mat)) == 0]		# completely remove any NA comparisons
+		comp_mat <- comp_mat[, colSums(is.na(comp_mat)) == 0]	# completely remove any NA comparisons
 		errors <- 0
 		for (snp in 1: ncol(comp_mat)) {
 			if (comp_mat[1, snp] != comp_mat[2, snp]) {
@@ -193,13 +215,12 @@ if (reps_present) {
 			}
 		}
 		snp_error <- 100 * errors / ncol(comp_mat)
-
 		# Now capture these values for that pair
 		error_df[pair_row,] <- c(loc_error, alle_error, snp_error)
 	}
-
 	# Write the resulting error rates to a file for plotting after
-	write.table(error_df, file = paste0(outpre, "_error_table.tab"), sep = "\t", quote = FALSE, row.names = FALSE)
+	write.table(error_df, file = paste0(outpre, "_error_table.tab"), sep = "\t", 
+			quote = FALSE, row.names = FALSE)
 }
 
 
@@ -208,7 +229,7 @@ if (reps_present) {
 ##########
 
 # If possible, assess genetic distances between individuals in the same populations
-
+cat("Assessing intrapopulation Euclidean distances between individuals\n")
 # First, remove replicates if they are present
 if (reps_present) {
 	cat("Dropping", length(reps), "replicates\n")
@@ -218,23 +239,16 @@ if (reps_present) {
 }
 
 
-
-#
-### Add filter for one per locus ?
-#
-
-
-
 # Filter on missing data
-cat("Filtering for a minimum sample coverage of", min_present_rate, "to keep a SNP\n")
 check_mat <- as.matrix(genl)
 keep_snps <- colSums(! is.na(check_mat)) / nrow(check_mat) >= min_present_rate
 genl <- genl[, keep_snps]
+cat("Kept", length(keep_snps),"SNPs after filtering for a minimum sample coverage of", 
+	min_present_rate, "\n")
 
 
 # Calculate distances between individuals
 # Use dist and Euclidean distance, which should omit calculations with missing values
-cat("Calculating Euclidean distance between individuals\n")
 dist_obj <- dist(as.matrix(genl))
 
 # Normalize the distances
@@ -288,11 +302,10 @@ write.table(dists_df, file = paste0(outpre, "_dist_table.tab"), sep = "\t", quot
 #		row.names = FALSE, col.names = FALSE)
 
 
-
 # Report that the script has finished
 if (reps_present) {
-	cat("Finished running MY replicate error assessment and intrapopulation Euclidean distances\n")
+	cat("Finished running MY replicate error assessment and intrapopulation Euclidean distances\n\n")
 } else {
-	cat("Finished running MY intrapopulation Euclidean distances\n")
+	cat("Finished running intrapopulation Euclidean distances\n\n")
 }
 
