@@ -121,13 +121,27 @@ if [ -z "$samp_file" ]; then
 fi
 
 
+# capture start time and report
+start="$(date +%s)"
 echo -e "\nStarting at $(date)\n"
 
 
 
 ########
+# Extract an array of sample names to be able to more selectively report sample-based stats
+########
+
+# read the first column of the sample file line by line, storing in the samples array
+# from https://stackoverflow.com/questions/11426529/reading-output-of-a-command-into-an-array-in-bash
+IFS=$'\n' read -r -d '' -a samples < <( cut -f 1 "$samp_file" && printf '\0')
+echo -e "Read in ${#samples[@]} sample names from the samples file\n"
+
+
+########
 # Create text files across parameter values to plot with the R script
 ########
+
+echo -e "Collecting stats from text files produced by ipyrad, and plotting in R\n"
 
 # 1 Proportion inferred paralogs -- could potentially be measured in different ways (?)
 # A) requires the final *_stats.txt file from ipyrad step 7
@@ -138,10 +152,16 @@ echo -e "\nStarting at $(date)\n"
 for num in $(seq $param_range)
 do
 	grep "max_shared_het" clust_"$num"/"$name_prefix"_"$num"_stats.txt | \
-	tr -s " " "\t" | cut -f 3,4 | sed "s/^/$num\t/" >> "$out_prefix"_paralogs1.tab && \
+	tr -s " " "\t" | cut -f 3,4 | sed "s/^/$num\t/" >> "$out_prefix"_paralogs_all.tab && \
 	tail -n +2 clust_"$num"/s5_consens*.txt | \
-	tr -s " " "\t" | cut -f 2,3,4,5 | sed "s/^/$num\t/" >> "$out_prefix"_paralogs2.tab
+	tr -s " " "\t" | cut -f 1,2,3,4,5 | sed "s/^/$num\t/" >> "$out_prefix"_paralogs_ind.tab
+	# now only keep samples present in the sample file
+	for sample in ${samples[@]}; do
+		grep "$sample" "$out_prefix"_paralogs_ind.tab >> templist
+	done
 done
+
+cut -f 1,3,4,5,6 templist > "$out_prefix"_paralogs_ind.tab && rm templist
 
 
 # 2 Heterozygosity
@@ -149,11 +169,17 @@ done
 for num in $(seq $param_range)
 do
 	tail -n +2 clust_"$num"/s5_consens*.txt | \
-	tr -s " " "\t" | cut -f 10 | sed "s/^/$num\t/" >> "$out_prefix"_heterozygosity.tab
+	tr -s " " "\t" | cut -f 1,10 | sed "s/^/$num\t/" >> "$out_prefix"_heterozygosity.tab
+	# now only keep samples present in the sample file
+	for sample in ${samples[@]}; do
+		grep "$sample" "$out_prefix"_heterozygosity.tab >> templist
+	done
 done
 
+cut -f 1,3 templist > "$out_prefix"_heterozygosity.tab && rm templist
 
-# 3 Number of loci and SNPs recovered
+
+# 3 Total number of loci and SNPs recovered
 # (requires the final *_stats.txt file from ipyrad step 7
 for num in $(seq $param_range)
 do
@@ -172,13 +198,19 @@ paste temp1 temp2 temp3 > "$out_prefix"_loci_snps.tab && rm temp1 temp2 temp3
 for num in $(seq $param_range)
 do
 	tail -n +2 clust_"$num"/s4_joint*.txt | \
-	tr -s " " "\t" | cut -f 3 | sed "s/^/$num\t/" >> "$out_prefix"_seqerror.tab
+	tr -s " " "\t" | cut -f 1,3 | sed "s/^/$num\t/" >> "$out_prefix"_seqerror.tab
+	# now only keep samples present in the sample file
+	for sample in ${samples[@]}; do
+		grep "$sample" "$out_prefix"_seqerror.tab >> templist
+	done
 done
+
+cut -f 1,3 templist > "$out_prefix"_seqerror.tab && rm templist
 
 
 # Plot them with the R script
 
-Rscript "$MM_script" -p1 "$out_prefix"_paralogs1.tab -p2 "$out_prefix"_paralogs2.tab \
+Rscript "$MM_script" --pall "$out_prefix"_paralogs_all.tab --pind "$out_prefix"_paralogs_ind.tab \
 	-h "$out_prefix"_heterozygosity.tab -l "$out_prefix"_loci_snps.tab \
 	-e "$out_prefix"_seqerror.tab -o "$out_prefix"
 
@@ -227,7 +259,7 @@ Rscript "$MM_script" -p1 "$out_prefix"_paralogs1.tab -p2 "$out_prefix"_paralogs2
 
 # If there is a folder of trees, collect the average bootstrap values for plotting, then submit to the R script
 if [ "$have_trees" == "True" ]; then
-	echo -e "\nCompiling bootstrap supports and plotting\n"
+	echo -e "Compiling bootstrap supports and plotting in R\n"
 	cd "$tree_folder"
 	for num in $(seq $param_range)
 	do
@@ -258,11 +290,13 @@ cut -f 1,2 "$samp_file" > temp_samp_file.tab
 # e.g. grep -v "Z" temp_samp_file.tab > new_samp_file.tab
 
 
-echo -e "\nRunning Mastretta-Yanes et al. error estimation (if reps present) and Euclidean pop distances\n"
+echo -e "Running Mastretta-Yanes et al. error estimation (if reps present) and Euclidean pop distances\n"
 
 # Submit each vcf file to the script, along with the sample file, then move the output to unique named files
 for num in $(seq $param_range)
 do
+	echo -e "\nClust threshold: ${num}\n"
+
 	# submit vcf and sample file and run script
 	Rscript "$MY_script" -s temp_samp_file.tab \
 	-v "clust_${num}/${name_prefix}_${num}.vcf" -o "temp" -r "$reps_present"
@@ -273,7 +307,9 @@ do
 		rm temp_error_table.tab
 	fi
 	tail -n +2 temp_dist_table.tab | sed "s/^/$num\t/" > "dist_table_${num}.tab"
-	rm temp_dist_table.tab
+	tail -n +2 temp_count80.tab | sed "s/^/$num\t/" > "count80_${num}.tab"
+	rm temp_dist_table.tab temp_count80.tab
+
 done
 
 # concatenate the files together and submit to the R script for plotting
@@ -282,13 +318,14 @@ if [ "$reps_present" == "yes" ]; then
 	rm error_table_*.tab
 fi
 cat dist_table_*.tab > "$out_prefix"_dist_tables.tab
-rm dist_table_*.tab
+cat count80_*.tab > "$out_prefix"_count80.tab
+rm dist_table_*.tab count80_*.tab
 
 if [ "$reps_present" == "yes" ]; then
-	Rscript "$MM_script" -merr "$out_prefix"_error_tables.tab -mdis "$out_prefix"_dist_tables.tab \
-		-o "$out_prefix" -s temp_samp_file.tab
+	Rscript "$MM_script" --merr "$out_prefix"_error_tables.tab --mdis "$out_prefix"_dist_tables.tab \
+		--mparis "$out_prefix"_count80.tab -o "$out_prefix" -s temp_samp_file.tab
 else
-	Rscript "$MM_script" -mdis "$out_prefix"_dist_tables.tab \
+	Rscript "$MM_script" --mdis "$out_prefix"_dist_tables.tab --mparis "$out_prefix"_count80.tab \
 		-o "$out_prefix" -s temp_samp_file.tab
 fi
 
@@ -314,11 +351,11 @@ done
 cut -f 1,3,4 "$samp_file" > temp_samp_file.tab
 
 # If wanting to exclude outgroups for this step, can submit a different sample file:
-# e.g. grep -v "Z" temp_samp_file.tab > new_sampe_file.tab
+# e.g. grep -v "Z" temp_samp_file.tab > new_samp_file.tab
 
 
 # Run the analyses and plot results
-echo -e "\nRunning analyses of vcf files to determine variation in PCoAs and relationships between" \
+echo -e "Running analyses of vcf files to determine variation in PCoAs and relationships between" \
 	"missing data and geographic distance vs. genomic similarity\n"
 Rscript "$MM_script" -v "$out_prefix"_vcf_list.txt -o "$out_prefix" -s temp_samp_file.tab
 
@@ -326,4 +363,10 @@ Rscript "$MM_script" -v "$out_prefix"_vcf_list.txt -o "$out_prefix" -s temp_samp
 rm temp_samp_file.tab
 
 
-echo -e "\nFinished at $(date)!\n"
+# calculate duration and report
+end="$(date +%s)"
+duration="$(( $end - $start ))"
+duration_mins=$(echo "scale=2; ${duration}/60" | bc)
+duration_hours=$(echo "scale=2; ${duration}/3600" | bc)
+
+echo -e "\nFinished at $(date) after running for $duration_mins minutes or $duration_hours hours\n"
