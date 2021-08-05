@@ -6,6 +6,12 @@
 ##########
 
 
+# set a couple parameters for calculations
+axes_to_use <- 8		# the number of PCoA axes to consider for sum of variation explained
+missing_rate <- 0.96		# the maximum proportion of missing data per SNP (e.g. 0.9 is present in >=10%)
+				# a value of 1.0 means all SNPs, a value of 0.96 means SNPs in >= 4% of samples
+
+
 # a helper function for when the script is called without arguments
 help <- function(help_message) {
 	if (missing(help_message)) {
@@ -17,11 +23,12 @@ help <- function(help_message) {
 		cat("\t-e\tThe seq error stats file\n")
 		cat("\t-h\tThe heterozygosity stats file\n")
 		cat("\t-l\tThe locus and snps recovered stats file\n")
-		cat("\t-p1\tThe paralogs1 stats file (based on full assembly)\n")
-		cat("\t-p2\tThe paralogs2 stats file (per sample)\n")
+		cat("\t--pall\tThe paralogs1 stats file (based on full assembly)\n")
+		cat("\t--pind\tThe paralogs2 stats file (per sample)\n")
 		cat("\t-t\tThe bootstraps stats file\n")
-		cat("\t-merr\tThe Mastretta-Yanes error rates file\n")
-		cat("\t-mdis\tThe Mastretta-Yanes population distances file\n")
+		cat("\t--merr\tThe Mastretta-Yanes error rates file\n")
+		cat("\t--mdis\tThe Mastretta-Yanes population distances file\n")
+		cat("\t--mparis\tThe Paris et al count of loci and SNPs found in >= 80% of individuals\n")
 		cat("\t-s\tThe samples file with the format: sample <tab> lat <tab> lon\n")
 		cat("\t-v\tA list of vcf files to be analysed, one per line with format:\n")
 		cat("\t\tclust_num <tab> relative_path_to_vcf\n")
@@ -50,7 +57,7 @@ if (length(args) == 0) {
 	tstats_present <- FALSE
 	merror_present <- FALSE
 	mdist_present <- FALSE
-	mpca_present <- FALSE
+	mparis_present <- FALSE
 	samples_present <- FALSE
 	vcf_present <- FALSE
 
@@ -66,21 +73,24 @@ if (length(args) == 0) {
 		} else if (args[index] == "-l") {
 			lstats_present <- TRUE
 			lstats_file <- args[index + 1]
-		} else if (args[index] == "-p1") {
+		} else if (args[index] == "--pall") {
 			p1stats_present <- TRUE
 			p1stats_file <- args[index + 1]
-		} else if (args[index] == "-p2") {
+		} else if (args[index] == "--pind") {
 			p2stats_present <- TRUE
 			p2stats_file <- args[index + 1]
 		} else if (args[index] == "-t") {
 			tstats_present <- TRUE
 			tstats_file <- args[index + 1]
-		} else if (args[index] == "-merr") {
+		} else if (args[index] == "--merr") {
 			merror_present <- TRUE
 			merror_file <- args[index + 1]
-		} else if (args[index] == "-mdis") {
+		} else if (args[index] == "--mdis") {
 			mdist_present <- TRUE
 			mdist_file <- args[index + 1]
+		} else if (args[index] == "--mparis") {
+			mparis_present <- TRUE
+			mparis_file <- args[index + 1]
 		} else if (args[index] == "-s") {
 			samples_present <- TRUE
 			samp_file <- args[index + 1]
@@ -170,7 +180,8 @@ if (merror_present) {
 	pdf(file = paste0(outpre, "_merror.pdf"))
 	myerror_table <- read.table(merror_file, sep = "\t", header = FALSE)
 	boxplot(myerror_table$V2 ~ myerror_table$V1,
-		main = "Locus error rates\n(loci present in one rep but not the other, relative to total in either/both)",
+		main = paste0("Locus error rates\n",
+			"(loci present in one rep but not the other, relative to total in either/both)"),
 		ylab = "Locus error rate (%)", xlab = "Clustering threshold (%)")
 	boxplot(myerror_table$V3 ~ myerror_table$V1,
 		main = "Allele error rates\n(loci present in both that differ, relative to total in both)",
@@ -187,8 +198,22 @@ if (mdist_present) {
 	mydist_table <- read.table(mdist_file, sep = "\t", header = FALSE)
 	boxplot(100 * mydist_table$V3 ~ mydist_table$V1,
 		main = "Average intrapopulation Euclidean distances",
-		ylab = "Average intrapopulation Euclidean distance (normalized %)", xlab = "Clustering threshold (%)")
+		ylab = "Average intrapopulation Euclidean distance (normalized %)", 
+		xlab = "Clustering threshold (%)")
 	invisible(dev.off)
+}
+
+if (mparis_present) {
+	# plot Paris et al counts of loci and SNPs in >= 80% of individuals
+	pdf(file = paste0(outpre, "_mparis.pdf"))
+	count_table <- read.table(mparis_file, sep = "\t", header = FALSE)
+	plot(count_table$V1, count_table$V2, main = "Total number of loci recovered in >= 80% of individuals", 
+		ylab = "Number of loci", xlab = "Clustering threshold (%)", xaxt = "n", pch = 16)
+	axis(1, at = seq(min(count_table$V1), max(count_table$V1), by = 1))
+	plot(count_table$V1, count_table$V3, main = "Total number of SNPs recovered in >= 80% of individuals", 
+		ylab = "Number of SNPs", xlab = "Clustering threshold (%)", xaxt = "n", pch = 16)
+	axis(1, at = seq(min(count_table$V1), max(count_table$V1), by = 1))
+	invisible(dev.off())
 }
 
 
@@ -209,17 +234,12 @@ if (vcf_present) {
 	suppressMessages(library(SNPRelate))
 	suppressMessages(library(geosphere))
 
-
-	# set a couple parameters
-	axes_to_use <- 8		# the number of PCoA axes to consider for sum of variation explained
-	missing_rate <- 1.0		# the maximum amount of missing data per SNP (e.g. 0.9 == present in >10%)
-					# a value of 1.0 means all SNPs are allowed (may make sense when assessing)
-
 	# cycle through the VCF files
 	for (rownumber in 1:nrow(vcf_list)) {
 		# read in the input file and convert
 		snpgdsVCF2GDS(vcf_list[rownumber, 2], "temp.gds", verbose = FALSE, method = "biallelic.only")
 		gds <- snpgdsOpen("temp.gds")
+		cat("Read in a VCF file with", length(read.gdsn(index.gdsn(gds, "snp.id"))), "SNPs\n")
 
 		# exclude samples not present in the sample file
 		sample_names <- read.gdsn(index.gdsn(gds, "sample.id"))
@@ -228,16 +248,16 @@ if (vcf_present) {
 		cat("Excluding", length(sample_names) - length(samp_include),
 			"samples not present in the sample file\n")
 
-		# exclude monomorphic SNPs based on possibly a reduced sample set
-		post_sample_SNPs <- snpgdsSelectSNP(gds, sample.id = samp_include, 
+		# exclude low coverage and monomorphic SNPs based on possibly a reduced sample set
+		loci_include <- snpgdsSelectSNP(gds, sample.id = samp_include, 
 							missing.rate = missing_rate, remove.monosnp = TRUE, 
 							autosome.only = FALSE, verbose = FALSE)
-		# capture how many SNPs are left
-		num_snps <- length(post_sample_SNPs)
-		cat("Found", num_snps, "SNPs after potentially excluding samples and removing monomorphic SNPs\n")
-		vcf_list[rownumber, 3] <- num_snps
 
-		loci_include <- post_sample_SNPs
+		# capture how many SNPs are left
+		num_snps <- length(loci_include)
+		cat("Found", num_snps, "SNPs after filters for low coverage",
+			"(<", 1 - missing_rate,") and monomorphic SNPs\n")
+		vcf_list[rownumber, 3] <- num_snps
 
 
 		####
@@ -264,10 +284,10 @@ if (vcf_present) {
 		# randomly exclude original SNPs if there are multiple per "chromosome" = locus
 		# from https://stackoverflow.com/questions/8041720/randomly-select-on-data-frame-for-unique-rows
 		chromosomes <- read.gdsn(index.gdsn(gds, "snp.chromosome"))
-		loc_names <- read.gdsn(index.gdsn(gds, "snp.id"))
-		snps_index <- loc_names %in% loci_include
+		loci_names <- read.gdsn(index.gdsn(gds, "snp.id"))
+		snps_index <- loci_names %in% loci_include
 		chromosomes <- chromosomes[snps_index]
-		loc_names <- loc_names[snps_index]
+		loci_names <- loci_names[snps_index]
 		if (length(duplicated(chromosomes)[duplicated(chromosomes)]) > 0) {
 			df <- chromosomes
 			loci <- sample(1: length(df))
@@ -276,8 +296,8 @@ if (vcf_present) {
 			df <- df[!dups]
 			loci <- loci[!dups]
 			loci <- loci[sort(loci, index.return = TRUE)$ix]
-			loci_include <- loc_names[loci]
-			loci_exclude <- loc_names[-loci]
+			loci_include <- loci_names[loci]
+			loci_exclude <- loci_names[-loci]
 			cat("Excluding", length(loci_exclude), "SNPs and keeping", 
 				length(loci_include), "SNPs, one (random) per locus\n")
 		}
@@ -286,7 +306,7 @@ if (vcf_present) {
 		####
 		# 2 Relationship between missing data and genomic dissimilarity
 		####
-		# calculate missing SNPs between samples
+		# calculate missing SNPs between samples (this is ~ equivalent to loci if previous step was run)
 		# capture the genotypes in a dataframe - 012 (other numbers = missing)
 		mymat <- read.gdsn(index.gdsn(gds, "genotype"))
 		sample_names <- read.gdsn(index.gdsn(gds, "sample.id"))
@@ -337,7 +357,7 @@ if (vcf_present) {
 		####
 		# 3 Relationship between geographic distance and genomic dissimilarity
 		####
-		# limit to only ingroup samples, since this assumes within species
+		# ideally limit to only ingroup samples, since this assumes within species
 		# NOTE: if we are doing species delimitation, this may be a poor metric across all samples
 		# compute a geographic distance matrix based on samples present in the analysis
 		geo_mat <- matrix(nrow = length(ibs_est$sample.id), ncol = length(ibs_est$sample.id))
@@ -360,10 +380,10 @@ if (vcf_present) {
 				geo_mat[samp_ind, samp2_ind] <- dist
 			}
 		}
-		# calculate the correlation between divergence and distance
+		# calculate the correlation between dissimilarity (1 - similarity) and distance
 		dist_corr <- cor(c(1 - ibs_est$ibs[lower.tri(ibs_est$ibs, diag = FALSE)]),
 				c(geo_mat[lower.tri(geo_mat, diag = FALSE)]), method = "pearson")
-		# calculate the slope of the relationship between divergence and distance
+		# calculate the slope of the relationship between dissimilarity and distance (use linear model)
 		model <- lm(1 - ibs_est$ibs[lower.tri(ibs_est$ibs, diag = FALSE)] ~ 
 				geo_mat[lower.tri(geo_mat, diag = FALSE)])
 		slope <- model$coefficients[2]
@@ -371,12 +391,12 @@ if (vcf_present) {
 		vcf_list[rownumber, 6] <- dist_corr
 		vcf_list[rownumber, 7] <- 100 * 100 * slope
 		cat("Used", length(ibs_est$snp.id), 
-			"SNPs to assess the relationship between divergence and geography\n",
+			"SNPs to assess the relationship between genomic dissimilarity and geography\n",
 			"The correlation and slope for clust", vcf_list[rownumber, 1], "is:", 
-			dist_corr, "and", 100 * 100 * slope, "% increased genomic divergence per 100 km\n\n")
+			dist_corr, "and", 100 * 100 * slope, "% increased genomic dissimilarity per 100 km\n\n")
 
 
-		# clost the file and remove it
+		# close the file and remove it
 		snpgdsClose(gds)
 		file.remove("temp.gds")
 	}
@@ -398,7 +418,7 @@ if (vcf_present) {
 		ylab = "Pearson correlation between missing data and dissimilarity", 
 		xlab = "Clustering threshold (%)", xaxt = "n", pch = 16)
 	axis(1, at = seq(min(vcf_list$V1), max(vcf_list$V1), by = 1))
-	# also plot total number of SNPs observed in the VCFs
+	# also plot total number of SNPs observed in the VCFs (will be different from overall summary stats)
 	plot(vcf_list$V1, vcf_list$V3, main = "Total number of SNPs recovered", 
 		ylab = "Number of SNPs", xlab = "Clustering threshold (%)", xaxt = "n", pch = 16)
 	axis(1, at = seq(min(vcf_list$V1), max(vcf_list$V1), by = 1))
@@ -410,8 +430,8 @@ if (vcf_present) {
 		ylab = "Pearson correlation between dissimilarity and geographic distance", 
 		xlab = "Clustering threshold (%)", xaxt = "n", pch = 16)
 	axis(1, at = seq(min(vcf_list$V1), max(vcf_list$V1), by = 1))
-	plot(vcf_list$V1, vcf_list$V7, main = "Slope of the relationship between genomic divergence and distance",
-		ylab = "Increase in genomic divergence (%) per 100 km", xlab = "Clustering threshold (%)", 
+	plot(vcf_list$V1, vcf_list$V7, main = "Slope of the relationship between genomic dissimilarity and distance",
+		ylab = "Increase in genomic dissimilarity (%) per 100 km", xlab = "Clustering threshold (%)", 
 		xaxt = "n", pch = 16)
 	axis(1, at = seq(min(vcf_list$V1), max(vcf_list$V1), by = 1))
 	invisible(dev.off())
