@@ -143,25 +143,24 @@ echo -e "Read in ${#samples[@]} sample names from the samples file\n"
 
 echo -e "Collecting stats from text files produced by ipyrad, and plotting in R\n"
 
-# 1 Proportion inferred paralogs -- could potentially be measured in different ways (?)
+# 1 Proportion inferred paralogs -- could potentially be measured in different ways
 # A) requires the final *_stats.txt file from ipyrad step 7
-# We grab fields 3 and 4 of the first table, which correspond to number flagged for hets out of total after filter
+# We grab fields 3 and 4 of the first table, which correspond to number flagged for hets and total after filter
 # B) uses the s5 stats file for individual samples
-# We need to grab the filter by hets and max alleles (fields 4 and 5) as well as the total (field 2)
-# minus the amount filtered by depth (field 3)
+# We need to grab the filter by max alleles (field 5) as well as the total (field 2)
 for num in $(seq $param_range)
 do
 	grep "max_shared_het" clust_"$num"/"$name_prefix"_"$num"_stats.txt | \
 	tr -s " " "\t" | cut -f 3,4 | sed "s/^/$num\t/" >> "$out_prefix"_paralogs_all.tab && \
 	tail -n +2 clust_"$num"/s5_consens*.txt | \
-	tr -s " " "\t" | cut -f 1,2,3,4,5 | sed "s/^/$num\t/" >> "$out_prefix"_paralogs_ind.tab
+	tr -s " " "\t" | cut -f 1,2,5 | sed "s/^/$num\t/" >> "$out_prefix"_paralogs_ind.tab
 	# now only keep samples present in the sample file
 	for sample in ${samples[@]}; do
 		grep "$sample" "$out_prefix"_paralogs_ind.tab >> templist
 	done
 done
 
-cut -f 1,3,4,5,6 templist > "$out_prefix"_paralogs_ind.tab && rm templist
+cut -f 1,3,4 templist > "$out_prefix"_paralogs_ind.tab && rm templist
 
 
 # 2 Heterozygosity
