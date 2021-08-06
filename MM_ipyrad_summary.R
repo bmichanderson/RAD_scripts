@@ -151,15 +151,15 @@ if (any(p1stats_present, p2stats_present)) {
 		paralogs_table$V4 <- paralogs_table$V2 / paralogs_table$V3
 		plot(paralogs_table$V1, paralogs_table$V4, 
 			main = "Proportion paralogous loci filtered\n(using max_shared_Hs_locus)", 
-			ylab = "Proportion paralogous loci", xlab = "Clustering threshold (%)", xaxt = "n", pch = 16)
+			ylab = "Proportion paralogous loci", 
+			xlab = "Clustering threshold (%)", xaxt = "n", pch = 16)
 		axis(1, at = seq(min(paralogs_table$V1), max(paralogs_table$V1), by = 1))
 	}
 	if (p2stats_present) {
 		paralogs_table <- read.table(p2stats_file, sep = "\t", header = FALSE)
-		paralogs_table$V6 <- (paralogs_table$V4 + paralogs_table$V5) / (paralogs_table$V2 - paralogs_table$V3)
-		boxplot(paralogs_table$V6 ~ paralogs_table$V1, 
-			main = paste0("Proportion paralogous loci filtered\n", 
-					"(using maxH and maxAlleles, relative to post depth filter)"),
+		paralogs_table$V4 <- paralogs_table$V3 / paralogs_table$V2
+		boxplot(paralogs_table$V4 ~ paralogs_table$V1, 
+			main = paste0("Proportion paralogous loci filtered\n(using maxAlleles)"),
 			ylab = "Proportion paralogous loci", xlab = "Clustering threshold (%)")
 	}
 	invisible(dev.off())
