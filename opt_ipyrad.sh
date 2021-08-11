@@ -154,13 +154,14 @@ do
 	tr -s " " "\t" | cut -f 3,4 | sed "s/^/$num\t/" >> "$out_prefix"_paralogs_all.tab && \
 	tail -n +2 clust_"$num"/s5_consens*.txt | \
 	tr -s " " "\t" | cut -f 1,2,5 | sed "s/^/$num\t/" >> "$out_prefix"_paralogs_ind.tab
-	# now only keep samples present in the sample file
-	for sample in ${samples[@]}; do
-		grep "$sample" "$out_prefix"_paralogs_ind.tab >> templist
-	done
 done
 
-cut -f 1,3,4 templist > "$out_prefix"_paralogs_ind.tab && rm templist
+# now only keep samples present in the sample file
+for sample in ${samples[@]}; do
+	grep "$sample" "$out_prefix"_paralogs_ind.tab >> templist
+done
+
+cut -f 1,3,4 <(sort templist) > "$out_prefix"_paralogs_ind.tab && rm templist
 
 
 # 2 Heterozygosity
@@ -169,13 +170,14 @@ for num in $(seq $param_range)
 do
 	tail -n +2 clust_"$num"/s5_consens*.txt | \
 	tr -s " " "\t" | cut -f 1,10 | sed "s/^/$num\t/" >> "$out_prefix"_heterozygosity.tab
-	# now only keep samples present in the sample file
-	for sample in ${samples[@]}; do
-		grep "$sample" "$out_prefix"_heterozygosity.tab >> templist
-	done
 done
 
-cut -f 1,3 templist > "$out_prefix"_heterozygosity.tab && rm templist
+# now only keep samples present in the sample file
+for sample in ${samples[@]}; do
+	grep "$sample" "$out_prefix"_heterozygosity.tab >> templist
+done
+
+cut -f 1,3 <(sort templist) > "$out_prefix"_heterozygosity.tab && rm templist
 
 
 # 3 Total number of loci and SNPs recovered
@@ -198,13 +200,14 @@ for num in $(seq $param_range)
 do
 	tail -n +2 clust_"$num"/s4_joint*.txt | \
 	tr -s " " "\t" | cut -f 1,3 | sed "s/^/$num\t/" >> "$out_prefix"_seqerror.tab
-	# now only keep samples present in the sample file
-	for sample in ${samples[@]}; do
-		grep "$sample" "$out_prefix"_seqerror.tab >> templist
-	done
 done
 
-cut -f 1,3 templist > "$out_prefix"_seqerror.tab && rm templist
+# now only keep samples present in the sample file
+for sample in ${samples[@]}; do
+	grep "$sample" "$out_prefix"_seqerror.tab >> templist
+done
+
+cut -f 1,3 <(sort templist) > "$out_prefix"_seqerror.tab && rm templist
 
 
 # Plot them with the R script
