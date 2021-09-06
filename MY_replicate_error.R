@@ -52,7 +52,7 @@ if (length(args) == 0) {
 	samples_present <- FALSE
 	vcf_present <- FALSE
 
-	for (index in 1: length(args)) {
+	for (index in seq_len(length(args))) {
 		if (args[index] == "-o") {
 			outpre <- args[index + 1]
 		} else if (all(args[index] == "-r", args[index + 1] == "no")) {
@@ -61,7 +61,7 @@ if (length(args) == 0) {
 			samples_present <- TRUE
 			samples_file <- args[index + 1]
 		} else if (args[index] == "-v") {
-			vcf_present = TRUE
+			vcf_present <- TRUE
 			vcf_file <- args[index + 1]
 		} else {
 			catch_args[i] <- args[index]
@@ -135,18 +135,18 @@ if (reps_present) {
 	# calculate error rates for each pair
 	error_df <- as.data.frame(matrix(nrow = nrow(pairs), ncol = 3))
 	colnames(error_df) <- c("Locus_error", "Allele_error", "SNP_error")
-	for (pair_row in 1: nrow(pairs)) {
+	for (pair_row in seq_len(nrow(pairs))) {
 		cat("Processing replicate pair", pair_row, "of", nrow(pairs), "\n")
-		pair_genl <- genl[match(c(pairs[pair_row,]), genl@ind.names)]	# subset genlight for the pair
+		pair_genl <- genl[match(c(pairs[pair_row, ]), genl@ind.names)]	# subset genlight for the pair
 
 		# locus
 		# use the "chromosome" tag to determine if a locus is present
-		NApos <- NA.posi(pair_genl)			# NA positions in the genlight
-		NA_rep <- NApos[[1]]				# NA positions in the rep
-		rep_genl <- pair_genl[1, -NA_rep]		# remove NA
+		na_pos <- NA.posi(pair_genl)			# NA positions in the genlight
+		na_rep <- na_pos[[1]]				# NA positions in the rep
+		rep_genl <- pair_genl[1, -na_rep]		# remove NA
 		rep_loci <- unique(rep_genl@chromosome)		# find unique loci names
-		NA_samp <- NApos[[2]]				# NA positions in the samp
-		samp_genl <- pair_genl[2, -NA_samp]		# remove NA
+		na_samp <- na_pos[[2]]				# NA positions in the samp
+		samp_genl <- pair_genl[2, -na_samp]		# remove NA
 		samp_loci <- unique(samp_genl@chromosome)	# find unique loci names
 		diffs <- length(setdiff(rep_loci, samp_loci)) + length(setdiff(samp_loci, rep_loci)) 	# differences
 		in_both <- intersect(rep_loci, samp_loci)
@@ -160,7 +160,7 @@ if (reps_present) {
 		comp_mat[is.na(comp_mat)] <- 3			# change NA to a number that won't match
 		index <- 1
 		allele_errors <- 0
-		for (snp in 1: ncol(comp_mat)) {
+		for (snp in seq_len(ncol(comp_mat))) {
 			if (as.character(allele_genl@chromosome[snp]) %in% chrom_list) {	# if we have seen this locus already
 				if (hit == 0) {				# if we haven't found an error yet for it
 					if (comp_mat[1, snp] != comp_mat[2, snp]) {
@@ -186,7 +186,7 @@ if (reps_present) {
 		comp_mat <- as.matrix(allele_genl)
 		comp_mat <- comp_mat[, colSums(is.na(comp_mat)) == 0]	# completely remove any NA comparisons
 		snp_errors <- 0
-		for (snp in 1: ncol(comp_mat)) {
+		for (snp in seq_len(ncol(comp_mat))) {
 			if (comp_mat[1, snp] != comp_mat[2, snp]) {
 				snp_errors <- snp_errors + 1
 			}
@@ -194,18 +194,18 @@ if (reps_present) {
 		snp_error <- 100 * snp_errors / ncol(comp_mat)
 
 		# Now capture these values for that pair
-		error_df[pair_row,] <- c(locus_error, allele_error, snp_error)
+		error_df[pair_row, ] <- c(locus_error, allele_error, snp_error)
 
 		# report
-		cat("\tProcessed", length(union(rep_loci, samp_loci)), "total loci, of which", 
+		cat("\tProcessed", length(union(rep_loci, samp_loci)), "total loci, of which",
 			diffs, "were present in one but not the other\n")
-		cat("\tProcessed", length(in_both), "loci present in both, of which", 
+		cat("\tProcessed", length(in_both), "loci present in both, of which",
 			allele_errors, "had at least one SNP difference\n")
 		cat("\tProcessed", ncol(comp_mat), "SNPs present in both, of which",
 			snp_errors, "differed\n")
 	}
 	# Write the resulting error rates to a file for plotting after
-	write.table(error_df, file = paste0(outpre, "_error_table.tab"), sep = "\t", 
+	write.table(error_df, file = paste0(outpre, "_error_table.tab"), sep = "\t",
 			quote = FALSE, row.names = FALSE)
 }
 
@@ -266,7 +266,7 @@ keep_snps <- colSums(! is.na(check_mat)) / nrow(check_mat) >= 0.80
 check_genl <- genl[, keep_snps]
 nsnps <- sum(keep_snps)
 nloci <- length(unique(check_genl@chromosome))
-cat("There were", nloci, "loci and", nsnps,"SNPs present in more than 80% of individuals\n")
+cat("There were", nloci, "loci and", nsnps, "SNPs present in more than 80% of individuals\n")
 # write to a table for plotting
 count_df <- as.data.frame(matrix(ncol = 2, nrow = 1))
 colnames(count_df) <- c("loci", "snps")
@@ -277,7 +277,7 @@ write.table(count_df, file = paste0(outpre, "_count80.tab"), sep = "\t", quote =
 # Remove monomorphic SNPs
 gl_matrix <- as.matrix(genl)
 loc_list <- array(NA, length(genl@loc.names))
-for (index in 1: length(genl@loc.names)) {
+for (index in seq_len(length(genl@loc.names))) {
 	row <- gl_matrix[, index]
 	if (all(row == 0, na.rm = TRUE) | all(row == 2, na.rm = TRUE)
 	| all(row == 1, na.rm = TRUE) | all(is.na(row))) {
@@ -307,7 +307,7 @@ cat("Assessing intrapopulation Euclidean distances between individuals\n")
 check_mat <- as.matrix(genl)
 keep_snps <- colSums(! is.na(check_mat)) / nrow(check_mat) >= min_present_rate
 genl <- genl[, keep_snps]
-cat("Kept", sum(keep_snps),"SNPs after filtering for a minimum sample coverage of", 
+cat("Kept", sum(keep_snps), "SNPs after filtering for a minimum sample coverage of",
 	min_present_rate, "\n")
 
 
@@ -330,13 +330,13 @@ if (! all(original_names == rownames(dist_mat))) {
 pops <- unique(populations)
 dists_df <- as.data.frame(matrix(nrow = length(pops), ncol = 2))
 colnames(dists_df) <- c("number_ind", "mean_intra_dist")
-for (popnum in 1: length(pops)) {
+for (popnum in seq_len(length(pops))) {
 	pop <- pops[popnum]
 	pos <- populations %in% pop			# find the positions which match that pop
 	dmat <- dist_mat[pos, pos]			# extract a smaller matrix of samples from that pop
 	dists <- dmat[lower.tri(dmat)]			# keep the lower triangle values
 	avg_dist <- mean(dists)				# calculate an average within population distance
-	dists_df[popnum,] <- c(nrow(dmat), avg_dist)
+	dists_df[popnum, ] <- c(nrow(dmat), avg_dist)
 }
 
 # Write the resulting file for plotting after
@@ -349,4 +349,3 @@ if (reps_present) {
 } else {
 	cat("Finished running intrapopulation Euclidean distances\n\n")
 }
-
