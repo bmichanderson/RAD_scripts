@@ -125,11 +125,49 @@ if (! vcf_present) {
 sample_table <- read.table(samples_file, sep = "\t", header = FALSE)
 vcf <- read.vcfR(vcf_file, verbose = FALSE)
 
+# keep one SNP per locus, preferring the higher sample coverage or, if a tie, the first one encountered
+# the vcf@fix slot has columns with info per locus; from ipyrad, column 8 has NS=xx;DP=xx
+# NS is the number of samples for that SNP
+ns <- lapply(vcf@fix[, 8], function(x) {
+	strsplit(strsplit(x, split = ";")[[1]][1], split = "=")[[1]][2]
+	}
+	)
+ns <- unlist(ns)
+loc <- vcf@fix[, 1]	# locus ids (chrom) are in column 1
+id <- vcf@fix[, 3]	# SNP ids (locus_pos) are in column 3
+# choose the best SNP per unique locus
+# (based on idea from https://github.com/ksil91/Ostrea_PopStructure/blob/master/Scripts/subsetSNPs.py)
+id_choose <- rep(NA, length(unique(loc)))
+index <- 1
+this_locus <- loc[1]
+best_id <- id[1]
+best_ns <- as.numeric(ns[1])
+for (snp in seq_len(length(id))) {
+	locus <- loc[snp]
+	if (locus != this_locus) {
+		id_choose[index] <- best_id
+		index <- index + 1
+		this_locus <- locus
+		best_ns <- 0
+		best_id <- id[snp]
+	}
+	if (as.numeric(ns[snp]) > best_ns) {
+		best_ns <- as.numeric(ns[snp])
+		best_id <- id[snp]
+	}
+}
+id_choose[index] <- best_id
+# filter the vcf for only those SNPs
+vcf <- vcf[vcf@fix[, 3] %in% id_choose]
+cat("Retained", index, "SNPs (one per locus) from the VCF file\n")
+
+
 # NOTE: dartR importing of VCF via genind does NOT preserve reference SNP
 # Don't use: geni <- vcfR2genind(vcf), followed by: genl <- gi2gl(geni)
 # Optionally could use from the dartR package: genl <- gl.read.vcf(vcf)
+# but this doesn't allow the above filtering for one SNP per locus
 
-# convert to genlight
+# convert to genlight (will lose loci that are not biallelic)
 genl <- vcfR2genlight(vcf)
 # assign ploidy for dartR to recognize as SNP data
 ploidy(genl) <- 2
@@ -163,29 +201,6 @@ cat("Retained", length(genl@ind.names), "samples\n")
 
 # assign population labels for dartR
 pop(genl) <- populations
-
-
-# remove SNPs if there are multiple per "chromosome" = locus
-# from https://stackoverflow.com/questions/8041720/randomly-select-on-data-frame-for-unique-rows
-if (length(duplicated(genl@chromosome)[duplicated(genl@chromosome)]) > 0) {
-	df <- genl@chromosome
-	loci <- sample(seq_len(length(df)))
-	df <- df[loci]
-	dups <- duplicated(df)
-	df <- df[!dups]
-	loci <- loci[!dups]
-	loci <- loci[sort(loci, index.return = TRUE)$ix]
-	loci_include <- genl@loc.names[loci]
-	loci_exclude <- genl@loc.names[-loci]
-	cat("Removing", length(loci_exclude), "SNPs from the same loci (random)\n")
-	# NOTE: slicing it manually leads to problems with @other slot dimensions, even though it is faster
-	# but as long as the compliance check comes after, we can slice away
-	genl <- genl[, match(loci_include, genl@loc.names)]
-	# slow way: genl <- gl.drop.loc(genl, loc.list = loci_exclude, verbose = 0)
-	#genl
-	cat("Retained", length(genl@loc.names), "SNPs\n")
-}
-
 
 
 # run a compliance check to get proper headings and stats
