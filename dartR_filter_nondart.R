@@ -204,6 +204,7 @@ pop(genl) <- populations
 
 
 # run a compliance check to get proper headings and stats
+cat("Checking dartR compliance\n")
 genl <- gl.compliance.check(genl, verbose = 0)
 
 
@@ -213,7 +214,7 @@ alleles <- alleles[grep(",", alleles$ALT, invert = TRUE), ]		# exclude multi-all
 alleles$all <- with(alleles, paste0(REF, "/", ALT))
 
 # now fill the loc.all slot with values
-genl@loc.all <- alleles$all[match(original_names, alleles$ID)]
+genl@loc.all <- alleles$all[match(genl@loc.names, alleles$ID)]
 
 
 # plot an initial visualization of the data
@@ -311,23 +312,31 @@ if (length(reps) > 0 && remove_replicates) {
 }
 
 
-# calculate average read depth per locus from metadata and attach it to the genlight object
+# Calculate average read depth per locus from vcf metadata and attach it to the genlight object
 # NOTE: in ipyrad output (VCF 4.0), there is no "AD"=allele depth, so would have to parse out the data used by Kym
 # I don't think it matters, since dartR is only using an average depth for all alleles anyway
+# grab the read depth for each SNP for each sample (this DP is different from the one per locus, which is total)
 depths <- extract.gt(vcf, element = "DP", as.numeric = TRUE)
-depths <- depths[, !is.na(match(original_names, colnames(depths)))]	# only keep for samples in the genl
-depths[depths == 0] <- NA		# turn all zero depth values to NA for ignoring
+depths <- depths[, colnames(depths) %in% original_names]			# only keep for samples in the genl
+depths <- depths[rownames(depths) %in% genl@loc.names, ]			# only keep for loci in the genl
+depths[depths == 0] <- NA											# turn all zero depth values to NA for ignoring
+# remove loci with all NA for read depth (were present only in samples that were removed already)
+notna_sums <- apply(depths, MARGIN = 1, function(x) {
+	sum(!is.na(x))
+})
+drop_loci <- rownames(depths[notna_sums == 0, ])
+if (length(drop_loci) > 0) {
+	depths <- depths[notna_sums != 0, ]
+	cat("Dropping", length(drop_loci), "loci without read depth (monomorphic for NA)\n")
+	genl <- gl.drop.loc(genl, loc.list = drop_loci, verbose = 0)
+	cat("Retained", length(genl@loc.names), "loci\n")
+}
+# calculate average read depths for each SNP
 avgdepths <- data.frame(round(rowMeans(depths, na.rm = TRUE), 1))
-avgdepths <- subset(avgdepths, !(is.na(avgdepths)))
-
-# ignore rows that are not in the genlight object
-avgdepths <- subset(avgdepths, rownames(avgdepths) %in% genl@loc.names)
-
 # now fill the rdepth column with values
 genl@other$loc.metrics$rdepth <- avgdepths[match(genl@loc.names, rownames(avgdepths)), ]
-
-# now remove any loci that have an NA in read depth
-# NOTE: I'm not sure why this sometimes happens, possibly because the genlight has loci that had zero read depth?
+# check if there are any loci that have an NA in read depth and remove them
+# NOTE: This shouldn't happen
 rm_list <- genl@loc.names[is.na(genl@other$loc.metrics$rdepth)]
 if (length(rm_list) > 0) {
 	cat("Dropping", length(rm_list), "loci without read depth information\n")
@@ -336,7 +345,7 @@ if (length(rm_list) > 0) {
 }
 
 
-# drop monomorphic loci
+# drop monomorphic loci (in this case, all NA has already been dropped)
 loc_list <- filt_mono(genl)
 if (class(loc_list) == "array") {
 	cat("Dropping", length(loc_list), "monomorphic loci\n")
@@ -384,7 +393,6 @@ filter <- gl.filter.callrate(filter, method = "loc", threshold = miss_loc_thresh
 filter <- gl.filter.callrate(filter, method = "ind", threshold = miss_ind_thresh,
 			plot = FALSE, verbose = 3)
 filter <- gl.filter.maf(filter, threshold = minor_allele_thresh, verbose = 3)
-# NOTE: rdepth was not working because there were NA values in the read depth column (not sure why)
 filter <- gl.filter.rdepth(filter, lower = lower_rdepth, upper = upper_rdepth, verbose = 3)
 
 
