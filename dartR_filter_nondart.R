@@ -3,20 +3,20 @@
 # Authors: Rachel Binks and Ben Anderson
 # Date: June - Sep 2021
 # Description: filter a VCF file with the dartR package
-# NOTE: this only works for biallelic loci
-# NOTE: will downsample (randomly) to one SNP per locus
+# NOTE: will only keep biallelic loci
+# NOTE: will downsample to one SNP per locus (highest cover, first encountered)
 ##########
 
 
 ## set output parameters (may adjust after a run)
 remove_outgroups <- TRUE	# remove outgroup samples which have a "Z" in their names
-remove_replicates <- FALSE	# remove replicate samples which have an "_R" at the end of the common text
-repro_thresh <- 0.8			# set reproducibility threshold (NOTE: sensitive to number of reps included)
-miss_loc_thresh <- 0.8		# set call rate by locus threshold (min proportion of samples with a locus)
+remove_replicates <- TRUE	# remove replicate samples which have an "_R" at the end of the common text
+repro_thresh <- 0.5			# set reproducibility threshold (NOTE: sensitive to number of reps included)
+miss_loc_thresh <- 0.9		# set call rate by locus threshold (min proportion of samples with a locus)
 miss_ind_thresh <- 0.2		# set call rate by ind threshold (min proportion of loci per individual)
-minor_allele_thresh <- 0.01	# set minor allele threshold (min frequency of allele)
+minor_allele_thresh <- 0.001	# set minor allele threshold (min frequency of allele)
 lower_rdepth <- 10			# set lower/upper read depth thresholds (min/max read depth for a SNP)
-upper_rdepth <- 500
+upper_rdepth <- 1000
 output_structure <- FALSE	# set what to output
 output_faststructure <- FALSE
 output_snapp <- FALSE
@@ -91,11 +91,9 @@ if (length(args) == 0) {
 } else {
 	catch_args <- vector("list")
 	i <- 1
-
 	output <- "output"
 	samples_present <- FALSE
 	vcf_present <- FALSE
-
 	for (index in seq_len(length(args))) {
 		if (args[index] == "-o") {
 			output <- args[index + 1]
@@ -111,11 +109,9 @@ if (length(args) == 0) {
 		}
 	}
 }
-
 if (! samples_present) {
 	stop(help("Missing argument for sample/pops file!\n"), call. = FALSE)
 }
-
 if (! vcf_present) {
 	stop(help("Missing argument for vcf file!\n"), call. = FALSE)
 }
@@ -124,14 +120,17 @@ if (! vcf_present) {
 # read in the input files
 sample_table <- read.table(samples_file, sep = "\t", header = FALSE)
 vcf <- read.vcfR(vcf_file, verbose = FALSE)
+# report read in
+cat("Read in a VCF with", ncol(vcf@gt), "samples,",
+	length(unique(vcf@fix[, 1])), "loci and", nrow(vcf@fix), "SNPs\n")
+
 
 # keep one SNP per locus, preferring the higher sample coverage or, if a tie, the first one encountered
 # the vcf@fix slot has columns with info per locus; from ipyrad, column 8 has NS=xx;DP=xx
 # NS is the number of samples for that SNP
 ns <- lapply(vcf@fix[, 8], function(x) {
 	strsplit(strsplit(x, split = ";")[[1]][1], split = "=")[[1]][2]
-	}
-	)
+	})
 ns <- unlist(ns)
 loc <- vcf@fix[, 1]	# locus ids (chrom) are in column 1
 id <- vcf@fix[, 3]	# SNP ids (locus_pos) are in column 3
@@ -171,8 +170,6 @@ cat("Retained", index, "SNPs (one per locus) from the VCF file\n")
 genl <- vcfR2genlight(vcf)
 # assign ploidy for dartR to recognize as SNP data
 ploidy(genl) <- 2
-# print the object to screen
-#genl
 
 
 # assign correct sample names and population labels to the genlight object if needed
@@ -224,7 +221,6 @@ gl.plot(genl, verbose = 0)
 invisible(dev.off())
 
 
-
 ####### Outgroups
 # determine names of outgroup samples and remove them if requested
 if (remove_outgroups) {
@@ -236,7 +232,6 @@ if (remove_outgroups) {
 		cat("Retained", length(genl@ind.names), "samples\n")
 	}
 }
-
 
 
 ####### Replicates
@@ -323,7 +318,7 @@ depths[depths == 0] <- NA											# turn all zero depth values to NA for ignor
 # remove loci with all NA for read depth (were present only in samples that were removed already)
 notna_sums <- apply(depths, MARGIN = 1, function(x) {
 	sum(!is.na(x))
-})
+	})
 drop_loci <- rownames(depths[notna_sums == 0, ])
 if (length(drop_loci) > 0) {
 	depths <- depths[notna_sums != 0, ]
@@ -346,6 +341,7 @@ if (length(rm_list) > 0) {
 
 
 # drop monomorphic loci (in this case, all NA has already been dropped)
+cat("Filtering for monomorphic loci\n")
 loc_list <- filt_mono(genl)
 if (class(loc_list) == "array") {
 	cat("Dropping", length(loc_list), "monomorphic loci\n")
@@ -363,8 +359,6 @@ genl <- gl.recalc.metrics(genl, verbose = 0)
 # check for dartR compliance
 cat("Checking dartR compliance\n")
 genl <- gl.compliance.check(genl, verbose = 0)
-#genl
-
 
 
 #######
@@ -397,6 +391,7 @@ filter <- gl.filter.rdepth(filter, lower = lower_rdepth, upper = upper_rdepth, v
 
 
 # remove monomorphic loci again, if present
+cat("Filtering monomorphic loci, if present\n")
 loc_list <- filt_mono(filter)
 if (class(loc_list) == "array") {
 	cat("Dropping", length(loc_list), "monomorphic loci\n")
@@ -418,23 +413,28 @@ invisible(dev.off())
 
 
 ## Output some basic diagrams
-# create a pcoa
+# create PCoAs
 pdf(paste0(output, "_pcoa.pdf"), paper = "A4")
 pcoa <- gl.pcoa(data, nfactors = 3)
-pcoa_coords <- gl.pcoa.plot(pcoa, data, labels = "pop", plot.out = FALSE, xaxis = 1, yaxis = 2)
+pcoa_coords1 <- gl.pcoa.plot(pcoa, data, labels = "pop", plot.out = FALSE, xaxis = 1, yaxis = 2)
+pcoa_coords2 <- gl.pcoa.plot(pcoa, data, labels = "pop", plot.out = FALSE, xaxis = 2, yaxis = 3)
+pcoa_coords3 <- gl.pcoa.plot(pcoa, data, labels = "pop", plot.out = FALSE, xaxis = 1, yaxis = 3)
 invisible(dev.off())
 
-# write pcoa scores
-# Optionally could use write.table(pcoa$scores, paste0(output, "_pcoascores.txt"), quote = FALSE, sep = "\t")
+# Could write coords with write.table(pcoa_coords1, paste0(output, "_pcoacoords.txt"), quote = FALSE, sep = "\t")
 
-# create a NJ tree
+# To interact with points and labels for exploring
+interpcoa1 <- gl.pcoa.plot(pcoa, data, labels = "interactive", xaxis = 1, yaxis = 2)
+interpcoa2 <- gl.pcoa.plot(pcoa, data, labels = "interactive", xaxis = 2, yaxis = 3)
+interpcoa3 <- gl.pcoa.plot(pcoa, data, labels = "interactive", xaxis = 1, yaxis = 3)
+
+
+# create a BioNJ tree for visualization
 pdf(paste0(output, "_nj.pdf"), paper = "A4")
-njtree <- njs(dist(as.matrix(data)))		# njs allows missing data
-# NOTE: may want to change the distance matrix to something with DNA substitution model
-plot(njtree, typ = "unrooted", main = "nj tree", cex.main = 0.6, show.tip.label = FALSE, edge.width = 0)
-tiplabels(data$pop, frame = "none", cex = 0.5)
+bionjtree <- bionjs(dist(as.matrix(data)))			# bionjs allows missing data
+plot(bionjtree, typ = "unrooted", main = "BioNJ Tree", cex.main = 0.6, show.tip.label = FALSE, edge.width = 0.5)
+tiplabels(data$ind.names, frame = "none", cex = 0.2)
 invisible(dev.off())
-
 
 
 #######
