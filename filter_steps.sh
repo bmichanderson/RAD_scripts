@@ -58,13 +58,13 @@ filter_depth()
 {
     vcftools --vcf $1 --out "$2"mDP --minDP $3 --recode --recode-INFO-all && \
     calc_stats "$2"mDP.recode.vcf "$2"mDP && \
-    Rscript $plot_script -p "$2"mDP |& tee -a filt_steps.log && \
+    Rscript $plot_script -p "$2"mDP |& tee -a filters_log.txt && \
     vcftools --vcf "$2"mDP.recode.vcf --out "$2"mDPmmDP --min-meanDP $4 --recode --recode-INFO-all && \
     calc_stats "$2"mDPmmDP.recode.vcf "$2"mDPmmDP && \
-    Rscript $plot_script -p "$2"mDPmmDP |& tee -a filt_steps.log && \
+    Rscript $plot_script -p "$2"mDPmmDP |& tee -a filters_log.txt && \
     vcftools --vcf "$2"mDPmmDP.recode.vcf --out "$2"mDPmmDPmac --mac $5 --recode --recode-INFO-all && \
     calc_stats "$2"mDPmmDPmac.recode.vcf "$2"mDPmmDPmac && \
-    Rscript $plot_script -p "$2"mDPmmDPmac |& tee -a filt_steps.log
+    Rscript $plot_script -p "$2"mDPmmDPmac |& tee -a filters_log.txt
 }
 
 
@@ -132,7 +132,7 @@ fi
 # calculate stats for raw
 if [ "$run_setting" == "1" ]; then
     calc_stats $vcf_file $out_prefix
-    Rscript $plot_script -p $out_prefix |& tee -a filt_steps.log
+    Rscript $plot_script -p $out_prefix |& tee -a filters_log.txt
 fi
 # run further filtering if requested
 if [ "$run_setting" == "2" ]; then
@@ -140,20 +140,20 @@ if [ "$run_setting" == "2" ]; then
     filter_snp $vcf_file "$out_prefix"_snp $min_cover
     filter_indv "$out_prefix"_snp.recode.vcf "$out_prefix"_snp_indv $max_indv_miss
     calc_stats "$out_prefix"_snp_indv.recode.vcf "$out_prefix"_F1
-    Rscript $plot_script -p "$out_prefix"_F1 |& tee -a filt_steps.log
+    Rscript $plot_script -p "$out_prefix"_F1 |& tee -a filters_log.txt
 
     # F2 straight to strict filter, indv first
     filter_indv $vcf_file "$out_prefix"_indv $max_indv_miss
     filter_snp "$out_prefix"_indv.recode.vcf "$out_prefix"_indv_snp $min_cover
     calc_stats "$out_prefix"_indv_snp.recode.vcf "$out_prefix"_F2
-    Rscript $plot_script -p "$out_prefix"_F2 |& tee -a filt_steps.log
+    Rscript $plot_script -p "$out_prefix"_F2 |& tee -a filters_log.txt
 
     # F3 depth first, then to strict filter, SNP first
     filter_depth $vcf_file "$out_prefix" $minDP $min_meanDP $minor_count
     filter_snp "$out_prefix"mDPmmDPmac.recode.vcf "$out_prefix"_depth_snp $min_cover
     filter_indv "$out_prefix"_depth_snp.recode.vcf "$out_prefix"_depth_snp_indv $max_indv_miss
     calc_stats "$out_prefix"_depth_snp_indv.recode.vcf "$out_prefix"_F3
-    Rscript $plot_script -p "$out_prefix"_F3 |& tee -a filt_steps.log
+    Rscript $plot_script -p "$out_prefix"_F3 |& tee -a filters_log.txt
 
     # F4 depth first (already done), then to iterative filters, then strict, indv first
     cp "$out_prefix"mDPmmDPmac.recode.vcf temp_in.vcf
@@ -166,6 +166,6 @@ if [ "$run_setting" == "2" ]; then
     filter_indv temp_in.vcf "$out_prefix"_iter_indv $max_indv_miss
     filter_snp "$out_prefix"_iter_indv.recode.vcf "$out_prefix"_iter_indv_snp $min_cover
     calc_stats "$out_prefix"_iter_indv_snp.recode.vcf "$out_prefix"_F4
-    Rscript $plot_script -p "$out_prefix"_F4 |& tee -a filt_steps.log
+    Rscript $plot_script -p "$out_prefix"_F4 |& tee -a filters_log.txt
     rm temp_in.vcf
 fi
