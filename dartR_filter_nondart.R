@@ -416,17 +416,15 @@ invisible(dev.off())
 # create PCoAs
 pdf(paste0(output, "_pcoa.pdf"), paper = "A4")
 pcoa <- gl.pcoa(data, nfactors = 3)
-pcoa_coords1 <- gl.pcoa.plot(pcoa, data, labels = "pop", plot.out = FALSE, xaxis = 1, yaxis = 2)
-pcoa_coords2 <- gl.pcoa.plot(pcoa, data, labels = "pop", plot.out = FALSE, xaxis = 2, yaxis = 3)
-pcoa_coords3 <- gl.pcoa.plot(pcoa, data, labels = "pop", plot.out = FALSE, xaxis = 1, yaxis = 3)
+pcoa_coords1 <- gl.pcoa.plot(pcoa, data, labels = "pop", plot.out = FALSE, xaxis = 1, yaxis = 2, verbose = 0)
+pcoa_coords2 <- gl.pcoa.plot(pcoa, data, labels = "pop", plot.out = FALSE, xaxis = 2, yaxis = 3, verbose = 0)
+pcoa_coords3 <- gl.pcoa.plot(pcoa, data, labels = "pop", plot.out = FALSE, xaxis = 1, yaxis = 3, verbose = 0)
 invisible(dev.off())
 
 # Could write coords with write.table(pcoa_coords1, paste0(output, "_pcoacoords.txt"), quote = FALSE, sep = "\t")
 
 # To interact with points and labels for exploring
-interpcoa1 <- gl.pcoa.plot(pcoa, data, labels = "interactive", xaxis = 1, yaxis = 2)
-interpcoa2 <- gl.pcoa.plot(pcoa, data, labels = "interactive", xaxis = 2, yaxis = 3)
-interpcoa3 <- gl.pcoa.plot(pcoa, data, labels = "interactive", xaxis = 1, yaxis = 3)
+# can use interpcoa1 <- gl.pcoa.plot(pcoa, data, labels = "interactive", xaxis = 1, yaxis = 2, verbose = 0)
 
 
 # create a BioNJ tree for visualization
