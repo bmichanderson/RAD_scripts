@@ -11,6 +11,7 @@
 ## set output parameters (may adjust after a run)
 remove_outgroups <- TRUE	# remove outgroup samples which have a "Z" in their names
 remove_replicates <- TRUE	# remove replicate samples which have an "_R" at the end of the common text
+run_repro <- TRUE			# whether to run reproducibility assessment with replicate samples (have "_R" in their names)
 repro_thresh <- 0.5			# set reproducibility threshold (NOTE: sensitive to number of reps included)
 miss_loc_thresh <- 0.9		# set call rate by locus threshold (min proportion of samples with a locus)
 miss_ind_thresh <- 0.2		# set call rate by ind threshold (min proportion of loci per individual)
@@ -237,7 +238,10 @@ if (remove_outgroups) {
 ####### Replicates
 # determine names of replicate pairs
 reps <- grep("_R", genl@ind.names, value = TRUE)
-if (length(reps) > 0) {
+if (run_repro) {
+	if (length(reps) == 0) {
+		stop(help("No replicates with \"_R\" found in their names!\n"), call. = FALSE)
+	}
 	fewer_names <- grep("_R", genl@ind.names, value = TRUE, invert = TRUE)
 	samps <- fewer_names[pmatch(sub("_R.*", "", reps), fewer_names)]
 
@@ -293,8 +297,6 @@ if (length(reps) > 0) {
 	repro_one <- 1 - (1 / npairs)
 	cat("There are", repro_lower, "of", nrow(df_repro), "SNPs with less than 100% reproducibility\n")
 	cat("A single error reduces reproducibility to", repro_one, "\n")
-} else {
-	cat("No replicates for reproducibility assessment\n")
 }
 
 
@@ -379,7 +381,7 @@ invisible(dev.off())
 
 # Apply filters on loci metrics
 filter <- genl
-if (length(reps) > 0) {
+if (run_repro) {
 	filter <- gl.filter.reproducibility(filter, threshold = repro_thresh, verbose = 3)
 }
 filter <- gl.filter.callrate(filter, method = "loc", threshold = miss_loc_thresh,
