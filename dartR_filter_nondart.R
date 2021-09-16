@@ -59,12 +59,12 @@ help <- function(help_message) {
 # NOTE: this function differs in looking for all '1' as well, which isn't part of gl.filter.monomorphs
 filt_mono <- function(my_genl) {
 	gl_matrix <- as.matrix(my_genl)
-	loc_list <- array(NA, length(my_genl@loc.names))
-	for (index in seq_len(length(my_genl@loc.names))) {
+	loc_list <- array(NA, adegenet::nLoc(my_genl))
+	for (index in seq_len(nLoc(my_genl))) {
 		row <- gl_matrix[, index]
 		if (any(all(row == 0, na.rm = TRUE), all(row == 2, na.rm = TRUE),
 		all(row == 1, na.rm = TRUE), all(is.na(row)))) {
-			loc_list[index] <- my_genl@loc.names[index]
+			loc_list[index] <- adegenet::locNames(my_genl)[index]
 		}
 	}
 	loc_list <- loc_list[!is.na(loc_list)]
@@ -122,7 +122,7 @@ if (! vcf_present) {
 sample_table <- read.table(samples_file, sep = "\t", header = FALSE)
 vcf <- read.vcfR(vcf_file, verbose = FALSE)
 # report read in
-cat("Read in a VCF with", ncol(vcf@gt), "samples,",
+cat("Read in a VCF with", ncol(vcf@gt) - 1, "samples,",
 	length(unique(vcf@fix[, 1])), "loci and", nrow(vcf@fix), "SNPs\n")
 
 
@@ -178,24 +178,24 @@ ploidy(genl) <- 2
 # format1 = id	sample_name	pop
 # format2 = id	pop
 # (format2 is for when the id = desired sample name)
-len_original <- length(genl@ind.names)
-original_names <- genl@ind.names
+len_original <- nInd(genl)
+original_names <- indNames(genl)
 if (ncol(sample_table) != 2) {
-	genl@ind.names <- sample_table$V2[match(genl@ind.names, sample_table$V1)]
-	populations <- sample_table$V3[match(genl@ind.names, sample_table$V2)]
+	indNames(genl) <- sample_table$V2[match(indNames(genl), sample_table$V1)]
+	populations <- sample_table$V3[match(indNames(genl), sample_table$V2)]
 } else {
-	genl@ind.names <- sample_table$V1[match(genl@ind.names, sample_table$V1)]
-	populations <- sample_table$V2[match(genl@ind.names, sample_table$V1)]
+	indNames(genl) <- sample_table$V1[match(indNames(genl), sample_table$V1)]
+	populations <- sample_table$V2[match(indNames(genl), sample_table$V1)]
 }
-if (length(genl@ind.names[is.na(genl@ind.names)]) > 0) {		# if there are any NAs (non-matches)
-	original_names <- original_names[!is.na(genl@ind.names)]	# to make sure vcf data matches
-	populations <- populations[!is.na(genl@ind.names)]
-	genl <- genl[!is.na(genl@ind.names), ]
+if (length(indNames(genl)[is.na(indNames(genl))]) > 0) {		# if there are any NAs (non-matches)
+	original_names <- original_names[!is.na(indNames(genl))]	# to make sure vcf data matches
+	populations <- populations[!is.na(indNames(genl))]
+	genl <- genl[!is.na(indNames(genl)), ]
 }
-len_new <- length(genl@ind.names)
-cat("Retained", length(genl@loc.names), "SNPs from the VCF file\n")
+len_new <- nInd(genl)
+cat("Retained", nLoc(genl), "SNPs from the VCF file\n")
 cat("Removed", len_original - len_new, "samples not present in the input sample table\n")
-cat("Retained", length(genl@ind.names), "samples\n")
+cat("Retained", nInd(genl), "samples\n")
 
 # assign population labels for dartR
 pop(genl) <- populations
@@ -212,7 +212,7 @@ alleles <- alleles[grep(",", alleles$ALT, invert = TRUE), ]		# exclude multi-all
 alleles$all <- with(alleles, paste0(REF, "/", ALT))
 
 # now fill the loc.all slot with values
-genl@loc.all <- alleles$all[match(genl@loc.names, alleles$ID)]
+genl@loc.all <- alleles$all[match(locNames(genl), alleles$ID)]
 
 
 # plot an initial visualization of the data
@@ -225,24 +225,24 @@ invisible(dev.off())
 ####### Outgroups
 # determine names of outgroup samples and remove them if requested
 if (remove_outgroups) {
-	outgroups <- genl@ind.names[grep("Z", genl@ind.names)]
+	outgroups <- indNames(genl)[grep("Z", indNames(genl))]
 	if (length(outgroups) > 0) {
 		cat("Dropping", length(outgroups), "outgroup samples\n")
-		original_names <- original_names[grep("Z", genl@ind.names, invert = TRUE)]
+		original_names <- original_names[grep("Z", indNames(genl), invert = TRUE)]
 		genl <- gl.drop.ind(genl, ind.list = outgroups, verbose = 0)
-		cat("Retained", length(genl@ind.names), "samples\n")
+		cat("Retained", nInd(genl), "samples\n")
 	}
 }
 
 
 ####### Replicates
 # determine names of replicate pairs
-reps <- grep("_R", genl@ind.names, value = TRUE)
+reps <- grep("_R", indNames(genl), value = TRUE)
 if (run_repro) {
 	if (length(reps) == 0) {
 		stop(help("No replicates with \"_R\" found in their names!\n"), call. = FALSE)
 	}
-	fewer_names <- grep("_R", genl@ind.names, value = TRUE, invert = TRUE)
+	fewer_names <- grep("_R", indNames(genl), value = TRUE, invert = TRUE)
 	samps <- fewer_names[pmatch(sub("_R.*", "", reps), fewer_names)]
 
 	# run reproducibility, originally based on ideas from script/paper by Kate Farquaharson
@@ -250,7 +250,7 @@ if (run_repro) {
 	pairs <- cbind(reps, samps)
 	pairs <- pairs[rowSums(is.na(pairs)) < 1, ]			# remove rows with missing pairs
 	npairs <- nrow(pairs)
-	sub_genl <- genl[match(c(pairs), genl@ind.names)]		# create a genlight object with only rep pairs
+	sub_genl <- genl[match(c(pairs), indNames(genl))]		# create a genlight object with only rep pairs
 
 	# for each locus/SNP, for each pair determine whether they differ
 	# then enter an error value for that locus for that pair
@@ -259,10 +259,10 @@ if (run_repro) {
 	# NOTE: I have slightly altered the original (I think) to count when one read is NA and the other isn't as an error
 	# NOTE: this approach will create a ratio that is HIGHLY dependent on how many reps are present
 	# so the filter applied should be carefully adjusted; I will add a report on what one error = in reproducibility
-	df_repro <- data.frame(locus = sub_genl@loc.names, RepAvg = double(length(sub_genl@loc.names)),
+	df_repro <- data.frame(locus = sub_locNames(genl), RepAvg = double(length(sub_locNames(genl))),
 				stringsAsFactors = FALSE)
 	calls <- as.matrix(sub_genl)
-	for (locus_ind in seq_len(length(sub_genl@loc.names))) {	# for each locus
+	for (locus_ind in seq_len(length(sub_locNames(genl)))) {	# for each locus
 		lcalls <- calls[, locus_ind]
 		errors <- vector("list", npairs)
 		for (row in 1: npairs) {		# for each replicate pair
@@ -287,8 +287,8 @@ if (run_repro) {
 		df_repro[locus_ind, "RepAvg"] <- as.double(repro)
 	}
 
-	# add the values to the genlight object
-	genl@other$loc.metrics$RepAvg <- df_repro$RepAvg[match(genl@loc.names, df_repro$locus)]
+	# add the values to the genlight object (naming of the column is important for dartR to recognize)
+	genl@other$loc.metrics$RepAvg <- df_repro$RepAvg[match(locNames(genl), df_repro$locus)]
 
 	# report results of reproducibility assessment
 	cat("Reproducibility summary:\n")
@@ -303,9 +303,9 @@ if (run_repro) {
 # remove the replicates from the dataset, if requested
 if (length(reps) > 0 && remove_replicates) {
 	cat("Dropping", length(reps), "replicate samples\n")
-	original_names <- original_names[grep("_R", genl@ind.names, invert = TRUE)]
+	original_names <- original_names[grep("_R", indNames(genl), invert = TRUE)]
 	genl <- gl.drop.ind(genl, ind.list = reps, verbose = 0)
-	cat("Retained", length(genl@ind.names), "samples\n")
+	cat("Retained", nInd(genl), "samples\n")
 }
 
 
@@ -315,7 +315,7 @@ if (length(reps) > 0 && remove_replicates) {
 # grab the read depth for each SNP for each sample (this DP is different from the one per locus, which is total)
 depths <- extract.gt(vcf, element = "DP", as.numeric = TRUE)
 depths <- depths[, colnames(depths) %in% original_names]			# only keep for samples in the genl
-depths <- depths[rownames(depths) %in% genl@loc.names, ]			# only keep for loci in the genl
+depths <- depths[rownames(depths) %in% locNames(genl), ]			# only keep for loci in the genl
 depths[depths == 0] <- NA											# turn all zero depth values to NA for ignoring
 # remove loci with all NA for read depth (were present only in samples that were removed already)
 notna_sums <- apply(depths, MARGIN = 1, function(x) {
@@ -326,19 +326,19 @@ if (length(drop_loci) > 0) {
 	depths <- depths[notna_sums != 0, ]
 	cat("Dropping", length(drop_loci), "loci without read depth (monomorphic for NA)\n")
 	genl <- gl.drop.loc(genl, loc.list = drop_loci, verbose = 0)
-	cat("Retained", length(genl@loc.names), "loci\n")
+	cat("Retained", nLoc(genl), "loci\n")
 }
 # calculate average read depths for each SNP
 avgdepths <- data.frame(round(rowMeans(depths, na.rm = TRUE), 1))
 # now fill the rdepth column with values
-genl@other$loc.metrics$rdepth <- avgdepths[match(genl@loc.names, rownames(avgdepths)), ]
+genl@other$loc.metrics$rdepth <- avgdepths[match(locNames(genl), rownames(avgdepths)), ]
 # check if there are any loci that have an NA in read depth and remove them
 # NOTE: This shouldn't happen
-rm_list <- genl@loc.names[is.na(genl@other$loc.metrics$rdepth)]
+rm_list <- locNames(genl)[is.na(genl@other$loc.metrics$rdepth)]
 if (length(rm_list) > 0) {
 	cat("Dropping", length(rm_list), "loci without read depth information\n")
 	genl <- gl.drop.loc(genl, loc.list = rm_list, verbose = 0)
-	cat("Retained", length(genl@loc.names), "loci\n")
+	cat("Retained", nLoc(genl), "loci\n")
 }
 
 
@@ -348,7 +348,7 @@ loc_list <- filt_mono(genl)
 if (class(loc_list) == "array") {
 	cat("Dropping", length(loc_list), "monomorphic loci\n")
 	genl <- gl.drop.loc(genl, loc.list = loc_list, verbose = 0)
-	cat("Retained", length(genl@loc.names), "loci\n")
+	cat("Retained", nLoc(genl), "loci\n")
 }
 
 
@@ -398,7 +398,7 @@ loc_list <- filt_mono(filter)
 if (class(loc_list) == "array") {
 	cat("Dropping", length(loc_list), "monomorphic loci\n")
 	filter <- gl.drop.loc(filter, loc.list = loc_list, verbose = 0)
-	cat("Retained", length(genl@loc.names), "loci\n")
+	cat("Retained", nLoc(genl), "loci\n")
 }
 
 
