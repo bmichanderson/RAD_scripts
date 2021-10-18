@@ -3,6 +3,7 @@
 ###############
 # Author: B. Anderson
 # Date: Sep 2021
+# Modified: Oct 2021 (simplified filtering and removed F2)
 # Description: run a successive series of filtering steps on VCF files
 # NOTE: based on O'Leary et al. 2018 DOI: 10.1111/mec.14792
 # NOTE: it requires R scripts, as well as vcftools in the PATH
@@ -57,11 +58,7 @@ calc_stats()
 # function for initial filtering for depth (arguments: vcf prefix minDP min_meanDP minor_count)
 filter_depth()
 {
-    vcftools --vcf $1 --out "$2"mDP --minDP $3 --recode --recode-INFO-all && \
-    calc_stats "$2"mDP.recode.vcf "$2"mDP && \
-    Rscript $plot_script -p "$2"mDP |& tee -a "$out_prefix"_log.txt && \
-    vcftools --vcf "$2"mDP.recode.vcf --out "$2"mDPmmDP --min-meanDP $4 --recode --recode-INFO-all && \
-    rm "$2"mDP.* && \
+    vcftools --vcf $1 --out "$2"mDPmmDP --minDP $3 --min-meanDP $4 --recode --recode-INFO-all && \
     calc_stats "$2"mDPmmDP.recode.vcf "$2"mDPmmDP && \
     Rscript $plot_script -p "$2"mDPmmDP |& tee -a "$out_prefix"_log.txt && \
     vcftools --vcf "$2"mDPmmDP.recode.vcf --out "$2"mDPmmDPmac --mac $5 --recode --recode-INFO-all && \
@@ -147,14 +144,6 @@ if [ "$run_setting" == "2" ]; then
     Rscript $plot_script -p "$out_prefix"_F1 |& tee -a "$out_prefix"_log.txt && \
     mv "$out_prefix"_snp_indv.recode.vcf "$out_prefix"_F1_out.vcf && \
     rm "$out_prefix"_snp* "$out_prefix"_F1.*
-
-    # F2 straight to strict filter, indv first
-    filter_indv $vcf_file "$out_prefix"_indv $max_indv_miss && \
-    filter_snp "$out_prefix"_indv.recode.vcf "$out_prefix"_indv_snp $min_cover && \
-    calc_stats "$out_prefix"_indv_snp.recode.vcf "$out_prefix"_F2 && \
-    Rscript $plot_script -p "$out_prefix"_F2 |& tee -a "$out_prefix"_log.txt && \
-    mv "$out_prefix"_indv_snp.recode.vcf "$out_prefix"_F2_out.vcf && \
-    rm "$out_prefix"_indv* "$out_prefix"_F2.*
 
     # F3 depth first, then to strict filter, SNP first
     filter_depth $vcf_file "$out_prefix" $minDP $min_meanDP $minor_count && \
