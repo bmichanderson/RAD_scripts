@@ -3,6 +3,7 @@
 ##########################
 # Author: B. Anderson
 # Date: Sep 2021
+# Modified: Oct 2021
 # Description: summarize results from an ipyrad tetrad run using the tetrad.sif container
 # NOTE: Run this script using the tetrad.sif container (e.g. singularity exec tetrad.sif python tetrad_summary.py ...)
 ##########################
@@ -41,6 +42,7 @@ parser.add_argument('-s', type = str, dest = 'snps_file', help = 'The *.snps.hdf
 parser.add_argument('-n', type = str, dest = 'name', help = 'The name that was used for the run (prefix of the existing and to be created output files)')
 parser.add_argument('-p', type = str, dest = 'pops_file', help = 'The populations file in the tab-separated form "sampleID    pop", one per line')
 parser.add_argument('-w', type = str, dest = 'workdir', help = 'The working directory where the results are')
+parser.add_argument('-o', type = str, dest = 'outgroup', help = 'The string present in outgroup samples IDs')
 
 
 # parse the command line
@@ -52,10 +54,13 @@ snps_file = args.snps_file
 name = args.name
 pops_file = args.pops_file
 workdir = args.workdir
+outgroup = args.outgroup
 
 if any([not name, not pops_file, not workdir, not snps_file]):
 	parser.print_help(sys.stderr)
 	sys.exit(1)
+if not outgroup:
+	outgroup = 'Z'
 
 
 # load the pops file and create the pop dictionary
@@ -100,7 +105,7 @@ tet = ipa.tetrad(
 ## plot trees
 
 # main tree
-tre = toytree.tree(tet.trees.tree).root([i for i in samples if 'Z' in i])
+tre = toytree.tree(tet.trees.tree).root([i for i in samples if outgroup in i])
 node_sizes = []
 support_vals = tre.get_node_values('support')
 for index in range(tre.nnodes):
@@ -126,7 +131,7 @@ tre_plot = tre.draw(
 toyplot.pdf.render(tre_plot[0], fobj = name + '_tree.pdf')
 
 # bootstrap majority rule consensus tree
-tre = toytree.tree(tet.trees.cons).root([i for i in samples if 'Z' in i])
+tre = toytree.tree(tet.trees.cons).root([i for i in samples if outgroup in i])
 node_sizes = []
 support_vals = tre.get_node_values('support')
 for index in range(tre.nnodes):
@@ -153,7 +158,7 @@ toyplot.pdf.render(tre_plot[0], fobj = name + '_constree.pdf')
 
 # cloud tree
 mtre = toytree.mtree(tet.trees.boots)
-mtre.treelist = [i.root([i for i in samples if 'Z' in i]) for i in mtre.treelist]
+mtre.treelist = [i.root([i for i in samples if outgroup in i]) for i in mtre.treelist]
 mtre_plot = mtre.draw_cloud_tree(
 	height = 3000,
 	width = 1500,
