@@ -2,7 +2,7 @@
 
 ##########################
 # Author: B. Anderson
-# Date: Sep 2021
+# Date: Sep-Oct 2021
 # Description: summarize results from an ipyrad Structure run using the ipyrad.sif container
 # NOTE: Run this script using the ipyrad.sif container (e.g. singularity exec ipyrad.sif python structure_summary.py ...)
 ##########################
@@ -11,6 +11,7 @@
 import sys
 import argparse
 import itertools
+import pandas as pd
 import ipyrad.analysis as ipa
 import toyplot
 from toyplot import pdf
@@ -90,16 +91,20 @@ etable = struct.get_evanno_table(range(k_vals[0], k_vals[-1] + 1))
 canvas = toyplot.Canvas(width = 400, height = 300)
 # log probability
 axes = canvas.cartesian(ylabel = 'Estimated Ln(Prob) Mean')
-axes.plot(etable.estLnProbMean, color = draw_colours[0], marker = 'o')
-axes.scatterplot(etable.estLnProbMean + etable.estLnProbStdev, color = 'black', marker = 'x')
-axes.scatterplot(etable.estLnProbMean - etable.estLnProbStdev, color = 'black', marker = 'x')
+axes.plot(etable.index, etable.estLnProbMean, color = draw_colours[0], marker = 'o')
+for index in etable.index:
+	mean = etable.estLnProbMean[index]
+	stdev = etable.estLnProbStdev[index]
+	points = [(index, mean + stdev), (index, mean - stdev)]
+	points_df = pd.DataFrame(points)
+	axes.plot(points_df[0], points_df[1], color = 'black', stroke_width = 0.5)
 axes.y.spine.style = {'stroke': draw_colours[0]}
 # delta K
 axes = axes.share('x', ylabel = 'deltaK', ymax = etable.deltaK.max() + etable.deltaK.max() * 0.1)
-axes.plot(etable.deltaK, color = draw_colours[1], marker = 'o')
+axes.plot(etable.index, etable.deltaK, color = draw_colours[1], marker = 'o', stroke_width = 0.75)
 axes.y.spine.style = {'stroke': draw_colours[1]}
-axes.x.ticks.locator = toyplot.locator.Explicit(range(len(etable.index)), etable.index)
 axes.x.label.text = 'K (N ancestral populations)'
+axes.x.ticks.locator = toyplot.locator.Explicit(etable.index)
 toyplot.pdf.render(canvas, fobj = name + '_evanno.pdf')
 
 
