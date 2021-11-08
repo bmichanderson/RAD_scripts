@@ -148,7 +148,7 @@ if (vcf_present) {
 	pca_var <- round(100 * pca$eig / sum(pca$eig), digits = 1)
 
 	# set the method used text for plotting
-	method <- paste0("glPca on ", str(nLoc(genl)), " SNPs")
+	method <- paste0("glPca on ", nLoc(genl), " SNPs")
 
 	# set what the pca_scores comprise
 	pca_scores <- pca$scores
@@ -201,23 +201,25 @@ invisible(dev.off())
 
 
 # To interact with points and labels for exploring use plotly
-# Note: change PC1 to V1 when using the covariance matrix
 if (interactive) {
 	suppressMessages(library("plotly"))
 	data <- as.data.frame(pca_scores)
-	plot_ly(data = data, x = ~PC1, y = ~PC2,
-			text = rownames(data), size = 15,
+	if (vcf_present) {
+		x_vals <- data$PC1
+		y_vals <- data$PC2
+		z_vals <- data$PC3
+		text_field <- rownames(data)
+	} else {
+		x_vals <- data$V1
+		y_vals <- data$V2
+		z_vals <- data$V3
+		text_field <- sample_table$V1
+	}
+	plot_ly(data = data, type = "scatter", mode = "markers",
+			x = ~x_vals, y = ~y_vals, text = text_field, size = 15,
 			color = populations, colors = pop_colours)
-	plot_ly(data = data, x = ~PC1, y = ~PC3,
-			text = rownames(data), size = 15,
-			color = populations, colors = pop_colours)
-	plot_ly(data = data, x = ~PC1, y = ~PC4,
-			text = rownames(data), size = 15,
-			color = populations, colors = pop_colours)
-	plot_ly(data = data, x = ~PC2, y = ~PC3,
-			text = rownames(data), size = 15,
-			color = populations, colors = pop_colours)
-	plot_ly(data = data, x = ~PC3, y = ~PC4,
-			text = rownames(data), size = 15,
+	plot_ly(data = data, type = "scatter3d", mode = "markers",
+			x = ~x_vals, y = ~y_vals, z = ~z_vals,
+			text = text_field, size = 15,
 			color = populations, colors = pop_colours)
 }
