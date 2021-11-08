@@ -83,7 +83,7 @@ for snp_index, phredl in enumerate(phredls):
 			norm_00 = float(like_00 / sum_likes)
 			norm_01 = float(like_01 / sum_likes)
 			norm_11 = float(like_11 / sum_likes)
-			norms = [norm_00, norm_01, norm_11]
+		norms = [norm_00, norm_01, norm_11]
 		val_list.append('\t'.join('{0:.4f}'.format(item) for item in norms))
 	line_out = line_out + '\t'.join(val_list)
 	lines_out.append(line_out)
