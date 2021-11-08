@@ -13,7 +13,7 @@ import random
 
 # instantiate the parser
 parser = argparse.ArgumentParser(description = 'A script to convert a VCF file to a Nexus input format required by SplitsTree or SNAPP;' +
-												' it is up to the user to ensure the VCF has the SNPs of interest (e.g. biallelic, one per locus)')
+						' it is up to the user to ensure the VCF has the SNPs of interest (e.g. biallelic, one per locus)')
 
 
 # add arguments to parse
@@ -43,7 +43,7 @@ if out_format:
 		sys.exit(1)
 else:
 	out_format = 'splits'
-	
+
 
 # process the VCF to grab sample labels and genotypes for each SNP locus
 with open(vcf_file, 'r') as vcf:
@@ -112,11 +112,12 @@ for index, sample_label in enumerate(sample_labels):
 				gts.append('?')
 			else:
 				gts.append(str(int(gt[0]) + int(gt[1])))
-		elif out_format == 'splits':		# just first allele for binary character
+		elif out_format == 'splits':		# each allele as a binary character
 			if '.' in gt:	# missing data
-				gts.append('?')
+				gts.append('??')
 			else:
 				gts.append(str(gt[0]))
+				gts.append(str(gt[1]))
 	line_out = ''.join(gts)
 	lines_out.append(line_out)
 
@@ -126,10 +127,12 @@ if out_format == 'snapp':
 	datatype = 'INTEGERDATA'
 	missing = '?'
 	symbols = '012'
+	num_chars = len(snps)
 elif out_format == 'splits':
 	datatype = 'STANDARD'
 	missing = '?'
 	symbols = '01'
+	num_chars = len(snps) * 2
 
 
 # create the Nexus file
@@ -137,8 +140,8 @@ with open(vcf_file + '.nex', 'w') as outfile:
 	outfile.write('#NEXUS\n')
 	taxa_block = ('BEGIN TAXA;\n\tDIMENSIONS NTAX=' + str(len(sample_labels)) + ';\n\t' +
 				'TAXLABELS ' + ' '.join(sample_labels) + ';\nEND;\n')
-	char_block = ('BEGIN CHARACTERS;\n\tDIMENSIONS NCHAR=' + str(len(snps)) + ';\n\t' + 
-				'FORMAT\n\t\tDATATYPE=' + datatype + '\n\t\tMISSING=' + missing + '\n\t\t' + 
+	char_block = ('BEGIN CHARACTERS;\n\tDIMENSIONS NCHAR=' + str(num_chars) + ';\n\t' +
+				'FORMAT\n\t\tDATATYPE=' + datatype + '\n\t\tMISSING=' + missing + '\n\t\t' +
 				'LABELS=NO\n\t\tSYMBOLS=\"' + symbols + '\";\n\tMATRIX\n')
 	outfile.write(taxa_block)
 	outfile.write(char_block)
@@ -149,4 +152,4 @@ with open(vcf_file + '.nex', 'w') as outfile:
 
 # report completion
 print('Converted a VCF file with ' + str(len(sample_labels)) + ' samples and ' + str(count_snps) + ' SNP loci to Nexus format with ' +
-	str(len(lines_out)) + ' samples and ' + str(len(snps)) + ' SNP loci')
+	str(len(lines_out)) + ' samples and ' + str(num_chars) + ' characters')
