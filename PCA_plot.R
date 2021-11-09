@@ -26,9 +26,10 @@ draw_colours <- c(
 	"steelblue",		# 46 82 B4 / 70	130	180
 	"aquamarine",		# 7F FF D4 / 127 255 212
 	"peru",				# CD 85 3F / 80 52 25
-	"sandybrown",		# F4 A4 60 / 244 164 96
+	"tomato",			# FF 63 47 / 100 39 28
 	"khaki",			# F0 E6 8C / 94 90 55
-	"lavender"			# E6 E6 FA / 90 90 98
+	"deeppink",			# FF 14 93 / 100 8 58
+	"slategrey"			# 70 80 90 / 44 50 56
 )
 
 
