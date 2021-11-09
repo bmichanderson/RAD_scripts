@@ -72,9 +72,12 @@ for snp_index, phredl in enumerate(phredls):
 	for sample_index, sample_label in enumerate(sample_labels):
 		this_pl = phredl[sample_index]
 		if this_pl == ['.']:		# missing data
-			norm_00 = 0.0
-			norm_01 = 0.0
-			norm_11 = 0.0
+			# Anders Albrechtsen recommended using three numbers, not zeroes
+			# I think we should keep it in line with the "normalized" below
+			# This is a bit tricky, but we are saying any genotype is equally likely
+			norm_00 = 1 / 3
+			norm_01 = 1 / 3
+			norm_11 = 1 / 3
 		else:
 			like_00 = float(10 ** (float(this_pl[0]) / -10))
 			like_01 = float(10 ** (float(this_pl[1]) / -10))
@@ -94,7 +97,3 @@ with open(vcf_file + '.beagle', 'w') as outfile:
 	outfile.write(header_line + '\n')
 	for line_out in lines_out:
 		outfile.write(line_out + '\n')
-
-
-# report completion
-print('Done')
