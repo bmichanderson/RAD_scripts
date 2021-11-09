@@ -8,6 +8,7 @@
 
 
 import sys
+import os
 import argparse
 
 
@@ -34,7 +35,7 @@ if not vcf_file:
 
 
 # process the VCF
-with open(vcf_file, 'r') as vcf, open('modPL_' + vcf_file, 'w') as outfile:
+with open(vcf_file, 'r') as vcf, open('modPL_' + os.path.basename(vcf_file), 'w') as outfile:
 	for line in vcf:
 		if line.startswith('#'):        # a header INFO line
 			if line.startswith('#CHROM'):		# the line with sample names
