@@ -34,11 +34,15 @@ vcf_file = args.vcf_file
 pops_file = args.pops_file
 fast = args.fast
 
+mode = 'Structure'
+
 if fast:
 	if fast.lower() == 'yes':
 		output_fast = True
+		mode = 'FastStructure'
 else:
 	output_fast = False
+
 
 
 # process the pops file
@@ -133,5 +137,6 @@ with open(vcf_file + '.str', 'w') as outfile:
 
 
 # report completion
-print('Converted a VCF file with ' + str(len(sample_labels)) + ' samples and ' + str(count_snps) + ' SNP loci to Structure format with ' +
-	str(int(len(lines_out)/2)) + ' samples and ' + str(len(snps)) + ' SNP loci')
+print('Converted a VCF file with ' + str(len(sample_labels)) + ' samples and ' + str(count_snps) +
+	' SNP loci to ' + mode + ' format with ' + str(int(len(lines_out)/2)) +	' samples and ' +
+	str(len(snps)) + ' SNP loci')
