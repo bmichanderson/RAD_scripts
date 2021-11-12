@@ -118,18 +118,17 @@ cat("Read in a VCF with", ncol(vcf@gt) - 1, "samples,",
 	length(unique(vcf@fix[, 1])), "loci and", nrow(vcf@fix), "SNPs\n")
 
 
-# convert to genlight and DNAbin objects
-genl <- vcfR2genlight(vcf)
-dnabin <- vcfR2DNAbin(vcf, consensus = TRUE, extract.haps = FALSE)
-
-
 # calculate distances between samples
 if (dist_method == 1) {
+	dnabin <- vcfR2DNAbin(vcf, consensus = TRUE, extract.haps = FALSE)
+	individuals <- rownames(dnabin)
 	## GENPOFAD (allows better comparison between hets and homo; ambiguity codes)
 	distance <- dist.snp(dnabin, model = "GENPOFAD")
 	dist_suffix <- "_distGENPOFAD.nex"
-	method <- paste0("GENPOFAD distances from ", nLoc(genl), " SNPs")
+	method <- paste0("GENPOFAD distances from ", dim(dnabin)[2], " SNPs")
 } else if (dist_method == 2) {
+	genl <- vcfR2genlight(vcf)
+	individuals <- indNames(genl)
 	## Euclidean
 	distance <- dist(as.matrix(genl))
 	dist_suffix <- "_distEuclidean.nex"
@@ -140,7 +139,7 @@ if (dist_method == 1) {
 
 
 # Output the distance matrix
-taxa <- rownames(as.matrix(genl))
+taxa <- individuals
 taxa_block <- paste0("BEGIN TAXA;\n\tDIMENSIONS NTAX=", length(taxa), ";\n\t",
 					"TAXLABELS ", paste(taxa, collapse = " "), ";\nEND;\n")
 dist_block <- paste0("BEGIN DISTANCES;\n\tFORMAT\n\t\tTRIANGLE=BOTH\n\t\tDIAGONAL\n\t\t",
@@ -156,7 +155,7 @@ close(outfile)
 
 
 # Assign colours for plotting
-populations <- sample_table$V2[match(indNames(genl), sample_table$V1)]
+populations <- sample_table$V2[match(individuals, sample_table$V1)]
 indiv_colours <- rep("black", length(populations))
 pop_colours <- rep("black", length(unique(populations)))
 ind <- 1
