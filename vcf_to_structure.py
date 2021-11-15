@@ -8,6 +8,7 @@
 
 
 import sys
+import os
 import argparse
 
 
@@ -131,7 +132,7 @@ for sample in samples:
 
 
 # create the Structure format file
-with open(vcf_file + '.str', 'w') as outfile:
+with open(os.path.basename(vcf_file) + '.str', 'w') as outfile:
 	for line_out in lines_out:
 		outfile.write(line_out + '\n')
 

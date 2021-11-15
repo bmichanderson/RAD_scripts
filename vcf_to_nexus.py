@@ -9,6 +9,7 @@
 
 import sys
 import argparse
+import os
 import random
 
 # instantiate the parser
@@ -136,7 +137,7 @@ elif out_format == 'splits':
 
 
 # create the Nexus file
-with open(vcf_file + '.nex', 'w') as outfile:
+with open(os.path.basename(vcf_file) + '.nex', 'w') as outfile:
 	outfile.write('#NEXUS\n')
 	taxa_block = ('BEGIN TAXA;\n\tDIMENSIONS NTAX=' + str(len(sample_labels)) + ';\n\t' +
 				'TAXLABELS ' + ' '.join(sample_labels) + ';\nEND;\n')

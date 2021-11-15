@@ -8,6 +8,7 @@
 
 
 import sys
+import os
 import argparse
 
 
@@ -93,7 +94,7 @@ for snp_index, phredl in enumerate(phredls):
 
 
 # create and write to the output file
-with open(vcf_file + '.beagle', 'w') as outfile:
+with open(os.path.basename(vcf_file) + '.beagle', 'w') as outfile:
 	outfile.write(header_line + '\n')
 	for line_out in lines_out:
 		outfile.write(line_out + '\n')
