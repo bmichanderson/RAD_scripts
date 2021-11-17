@@ -41,7 +41,7 @@ parser = argparse.ArgumentParser(description = 'A script to create barplots for 
 parser.add_argument('-o', type = str, dest = 'out_pre', help = 'The prefix for the output pdf [default \"output\"')
 parser.add_argument('-p', type = str, dest = 'pops_file', help = 'The populations file in the tab-delimited form ' +
 					'"sampleID    pop", one per line; samples must be in the same order as in the Q matrix')
-parser.add_argument('-q', type = str, dest = 'Q_file', help = 'The Q matrix file containing the space-delimited assignment proportions ' +
+parser.add_argument('-q', type = str, dest = 'Q_file', help = 'The Q matrix file containing the whitespace-delimited assignment proportions ' +
 					'without headers or any line information; i.e. a table with K columns and as many rows as samples')
 
 
@@ -67,7 +67,7 @@ sample_df.rename(columns = {0: 'Sample', 1: 'Pop'},	inplace = True)
 
 
 # load the Q matrix
-Q_df = pd.read_csv(Q_file, sep = ' ', header = None)
+Q_df = pd.read_csv(Q_file, delim_whitespace = True, header = None)
 
 
 # add the Q values to the sample dataframe
@@ -85,12 +85,19 @@ plot_df = sample_df.sort_values(['Pop', 'Sample'])
 # for pop in pops
 #	which column has the highest value for individual 1
 #		select that column as next in the sort order if not already there
+# NOTE: it may still not be sorted (pop not majority in any first ind)
+# if so, compare column max values, and continue until all assigned
 K = 1
 sort_order = []
 while K <= num_apops:
 	for pop in set(plot_df['Pop']):
 		df1 = plot_df[plot_df['Pop'] == pop]
 		apop = df1[df1.columns[2:]].idxmax(axis = 1).iloc[0]
+		if apop not in sort_order:
+			sort_order.append(apop)
+			K = K + 1
+	maxs = plot_df.iloc[:, 2:].max().sort_values(ascending = False)
+	for apop in list(maxs.index):
 		if apop not in sort_order:
 			sort_order.append(apop)
 			K = K + 1
