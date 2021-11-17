@@ -70,9 +70,10 @@ fig, (ax1, ax2) = plt.subplots(2, 1, sharex = True, figsize = (12, 12))
 plt.subplots_adjust(hspace = 0.2)
 like_comps.plot(y = 'mean', marker = '.', markersize = 12,
 					title = 'Likelihood L(K) (+/-SD)', legend = False,
-					linestyle = 'none', color = 'steelblue', ax = ax1)
-ax1.errorbar(like_comps.index, like_comps['mean'], yerr = like_comps['double_std'],
-			color = 'black', capsize = 2, linewidth = 0.75)
+					linewidth = 0.75, color = 'steelblue', ax = ax1)
+like_df.boxplot('Likelihood', 'K', ax = ax1, positions = like_comps.index,
+				color = 'black')
+ax1.get_figure().suptitle('')
 like_comps.plot(y = 'deltaK', marker = '.', markersize = 12,
 					title = 'deltaK', legend = False,
 					color = 'steelblue', ax = ax2)
