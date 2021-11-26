@@ -3,7 +3,7 @@
 # Author: Ben Anderson
 # Date: Nov 2021
 # Description: calculate distances between samples from a VCF file,
-#				output distance matrix as Nexus and plot NJ tree and PCoA
+# output distance matrix as Nexus and plot NJ tree and PCoA
 ##########
 
 

@@ -16,6 +16,11 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 
+# to avoid warnings when creating ragged arrays in np
+# (e.g. when the number of reps per K is different)
+np.warnings.filterwarnings('ignore', category = np.VisibleDeprecationWarning)
+
+
 # instantiate the parser
 parser = argparse.ArgumentParser(description = 'A script to compute and visualize likelihoods from Structure-like runs for assessing best K')
 
