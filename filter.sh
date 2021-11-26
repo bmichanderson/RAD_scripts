@@ -39,6 +39,7 @@ usage()
 	echo -e "Options:\n" \
 		"\t-o\tOutput prefix to name files produced during the run [default \"out\"]\n" \
 		"\t-v\tVCF file\n" \
+		"\t-d\tRun depth filter, \"y\" [default] or \"n\"\n" \
 		"\t-r\tRun iterative final filter, \"y\" or \"n\" [default]\n" \
 		"\t--mincov\tminimum proportion sample coverage for a SNP [default 0.9]\n" \
 		"\t--maxm\tmaximum proportion missing for a sample [default 0.4]\n" \
@@ -111,6 +112,11 @@ case $key in
 	shift
 	shift
 	;;
+	-d)
+	run_depth="$2"
+	shift
+	shift
+	;;
 	-r)
 	run_iter="$2"
 	shift
@@ -161,6 +167,9 @@ fi
 if [ -z "$out_prefix" ]; then
 	out_prefix="out"
 fi
+if [ -z "$run_depth" ]; then
+	run_depth="y"
+fi
 if [ -z "$run_iter" ]; then
 	run_iter="n"
 fi
@@ -175,30 +184,34 @@ fi
 	#rm "$out_prefix".*
 #fi
 
-# F1 straight to strict filter, SNP first
-filter_snp $vcf_file "$out_prefix"_snp $mincov && \
-filter_indv "$out_prefix"_snp.recode.vcf "$out_prefix"_snp_indv $maxm && \
-#calc_stats "$out_prefix"_snp_indv.recode.vcf "$out_prefix"_F1 && \
-#Rscript $plot_script -p "$out_prefix"_F1 |& tee -a "$out_prefix"_log.txt && \
-mv "$out_prefix"_snp_indv.recode.vcf "$out_prefix"_F1_out.vcf && \
-rm "$out_prefix"_snp* #"$out_prefix"_F1.*
-
-# F3 depth first, then to strict filter, SNP first
-filter_depth $vcf_file "$out_prefix" $mind $minmd $maxd $mac && \
-filter_snp "$out_prefix"dpmac.recode.vcf "$out_prefix"_depth_snp $mincov && \
-filter_indv "$out_prefix"_depth_snp.recode.vcf "$out_prefix"_depth_snp_indv $maxm && \
-#calc_stats "$out_prefix"_depth_snp_indv.recode.vcf "$out_prefix"_F3 && \
-#Rscript $plot_script -p "$out_prefix"_F3 |& tee -a "$out_prefix"_log.txt && \
-mv "$out_prefix"_depth_snp_indv.recode.vcf "$out_prefix"_F3_out.vcf && \
-rm "$out_prefix"_depth_snp* #"$out_prefix"_F3.*
-
+if [ "$run_depth" == "n" ]; then
+	# F1 straight to strict filter, SNP first (no depth)
+	filter_snp $vcf_file "$out_prefix"_snp $mincov && \
+	filter_indv "$out_prefix"_snp.recode.vcf "$out_prefix"_snp_indv $maxm && \
+	#calc_stats "$out_prefix"_snp_indv.recode.vcf "$out_prefix"_F1 && \
+	#Rscript $plot_script -p "$out_prefix"_F1 |& tee -a "$out_prefix"_log.txt && \
+	mv "$out_prefix"_snp_indv.recode.vcf "$out_prefix"_F1_out.vcf && \
+	rm "$out_prefix"_snp* #"$out_prefix"_F1.*
+else
+	# F3 depth first, then to strict filter, SNP first
+	filter_depth $vcf_file "$out_prefix" $mind $minmd $maxd $mac && \
+	filter_snp "$out_prefix"dpmac.recode.vcf "$out_prefix"_depth_snp $mincov && \
+	filter_indv "$out_prefix"_depth_snp.recode.vcf "$out_prefix"_depth_snp_indv $maxm && \
+	#calc_stats "$out_prefix"_depth_snp_indv.recode.vcf "$out_prefix"_F3 && \
+	#Rscript $plot_script -p "$out_prefix"_F3 |& tee -a "$out_prefix"_log.txt && \
+	mv "$out_prefix"_depth_snp_indv.recode.vcf "$out_prefix"_F3_out.vcf && \
+	rm "$out_prefix"_depth_snp* #"$out_prefix"_F3.*
+fi
 
 # run an iterative filter if requested
 if [ "$run_iter" == "y" ]; then
-	mv "$out_prefix"dpmac.recode.vcf temp_in.vcf && \
-	rm "$out_prefix"dpmac.*
-
-	# F4 depth first (already done), then iterative filters, then to strict filter, indv first
+	if [ "$run_depth" == "y" ]; then
+		mv "$out_prefix"dpmac.recode.vcf temp_in.vcf && \
+		rm "$out_prefix"dpmac.*
+	else
+		cp $vcf_file temp_in.vcf
+	fi
+	# F4 depth first (or not), then iterative filters, then to strict filter, indv first
 	for iter in $(seq 1 ${#iter_snp[@]})
 	do
 		filter_snp temp_in.vcf "$out_prefix"_"$iter"_snp ${iter_snp[iter - 1]} && \
@@ -212,6 +225,6 @@ if [ "$run_iter" == "y" ]; then
 	#Rscript $plot_script -p "$out_prefix"_F4 |& tee -a "$out_prefix"_log.txt && \
 	mv "$out_prefix"_iter_indv_snp.recode.vcf "$out_prefix"_F4_out.vcf && \
 	rm "$out_prefix"_iter_indv* temp_in.vcf #"$out_prefix"_F4.* 
-else
+elif [ "$run_depth" == "y" ]; then
 	rm "$out_prefix"dpmac.*	
 fi
