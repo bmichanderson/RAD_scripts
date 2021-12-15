@@ -44,7 +44,7 @@ help <- function(help_message) {
 		cat("A script to calculate distances from an input VCF file, then output the matrix and plot NJ and PCoA\n")
 		cat("Usage: Rscript distances.R -d dist_method -o output -v vcf_file -s samples_file\n")
 		cat("Options:\n")
-		cat("\t-d\tThe distance method 1: GENPOFAD [default] or 2: Euclidean\n")
+		cat("\t-d\tThe distance method: (G/1)GENPOFAD [default], (E/2)Euclidean, (M/3)MATCHSTATES\n")
 		cat("\t-o\tThe output file name prefix [default output]\n")
 		cat("\t-v\tThe VCF file to be analysed\n")
 		cat("\t-s\tSamples and populations as tab-delimited sample IDs and pops, one per line\n")
@@ -89,7 +89,14 @@ if (length(args) == 0) {
 	samples_present <- FALSE
 	for (index in seq_len(length(args))) {
 		if (args[index] == "-d") {
-			dist_method <- as.integer(args[index + 1])
+			arg <- args[index + 1]
+			if (arg == "G" || arg == "1") {
+				dist_method <- 1
+			} else if (arg == "E" || arg == "2") {
+				dist_method <- 2
+			} else if (arg == "M" || arg == "3") {
+				dist_method <- 3
+			}
 		} else if (args[index] == "-o") {
 			output <- args[index + 1]
 		} else if (args[index] == "-s") {
@@ -121,6 +128,10 @@ cat("Read in a VCF with", ncol(vcf@gt) - 1, "samples,",
 # calculate distances between samples
 if (dist_method == 1) {
 	dnabin <- vcfR2DNAbin(vcf, consensus = TRUE, extract.haps = FALSE)
+	# we need to change the default behaviour of converting missing into "n"!!!!!
+	temp <- as.character(dnabin)
+	temp[temp == "n"] <- "?"
+	dnabin <- as.DNAbin(temp)
 	individuals <- rownames(dnabin)
 	## GENPOFAD (allows better comparison between hets and homo; ambiguity codes)
 	distance <- dist.snp(dnabin, model = "GENPOFAD")
@@ -133,8 +144,19 @@ if (dist_method == 1) {
 	distance <- dist(as.matrix(genl))
 	dist_suffix <- "_distEuclidean.nex"
 	method <- paste0("Euclidean distances from ", nLoc(genl), " SNPs")
+} else if (dist_method == 3) {
+	dnabin <- vcfR2DNAbin(vcf, consensus = TRUE, extract.haps = FALSE)
+	# we need to change the default behaviour of converting missing into "n"!!!!!
+	temp <- as.character(dnabin)
+	temp[temp == "n"] <- "?"
+	dnabin <- as.DNAbin(temp)
+	individuals <- rownames(dnabin)
+	## MATCHSTATES (another way to use ambiguity codes)
+	distance <- dist.snp(dnabin, model = "MATCHSTATES")
+	dist_suffix <- "_distMATCHSTATES.nex"
+	method <- paste0("MATCHSTATES distances from ", dim(dnabin)[2], " SNPs")
 } else {
-	stop(help("Distance method needs to be specified as 1 or 2!\n"), call. = FALSE)
+	stop(help("Distance method incorrectly specified! Quitting...\n"), call. = FALSE)
 }
 
 
