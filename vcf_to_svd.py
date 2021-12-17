@@ -38,6 +38,23 @@ if not vcf_file:
 	sys.exit(1)
 
 
+# create an ambiguity dictionary
+amb_dict = {
+	'CT': 'Y',
+	'TC': 'Y',
+	'AG': 'R',
+	'GA': 'R',
+	'AT': 'W',
+	'TA': 'W',
+	'CG': 'S',
+	'GC': 'S',
+	'GT': 'K',
+	'TG': 'K',
+	'AC': 'M',
+	'CA': 'M'
+}
+
+
 # process the sample file (if present) into a tuple list (sample, pop/taxon)
 if sample_file:
 	sample_list = []
@@ -90,9 +107,11 @@ if not sample_file:
 		sample_list.append((sample, sample))
 
 
-# create the output data lines to write to the Nexus file
+# create the output data lines to write to the Nexus files
 lines_out = []
+align_lines_out = []
 samples_out = []
+align_samples_out = []
 sample_excl = 0
 for sample_tuple in sample_list:
 	sample = sample_tuple[0]
@@ -107,17 +126,25 @@ for sample_tuple in sample_list:
 	else:
 		bases1 = []
 		bases2 = []
+		sequence = []
 		# sample names can't have dashes in PAUP, so substitute with periods
 		sample = sample.replace('-', '.')
 		samples_out.append([sample + '_A', sample_tuple[1]])
 		samples_out.append([sample + '_B', sample_tuple[1]])
+		align_samples_out.append(sample)
 		for genotypes in snps:
-			bases1.append(genotypes[this_index][0])
-			bases2.append(genotypes[this_index][1])
+			genotype = genotypes[this_index]
+			bases1.append(genotype[0])
+			bases2.append(genotype[1])
+			if genotype[0] == genotype[1]:
+				sequence.append(genotype[0])
+			else:
+				sequence.append(amb_dict[genotype[0] + genotype[1]])
 		line_out1 = sample + '_A' + '\t' + ''.join(bases1)
 		line_out2 = sample + '_B' + '\t' + ''.join(bases2)
 		lines_out.append(line_out1)
 		lines_out.append(line_out2)
+		align_lines_out.append(sample + '\t' + ''.join(sequence))
 
 
 # determine if any samples in the VCF were not in the sample list
@@ -133,6 +160,7 @@ datatype = 'NUCLEOTIDE'
 missing = '?'
 num_chars = len(snps)
 num_taxa = len(samples_out)
+align_num_taxa = len(align_samples_out)
 taxa_labels = [item[0] for item in samples_out]
 species = []
 pops_out = set([item[1] for item in samples_out])
@@ -142,7 +170,7 @@ for pop in pops_out:
 	species.append(pop + ' : ' + ' '.join(members))
 
 
-# create the Nexus file
+# create the Nexus files (one for SVDQuartets, one as an alignment for e.g. IQTREE)
 with open(os.path.basename(vcf_file) + '.nex', 'w') as outfile:
 	outfile.write('#NEXUS\n\n')
 	taxa_block = ('BEGIN TAXA;\n\tDIMENSIONS NTAX=' + str(num_taxa) + ';\n\t' +
@@ -157,6 +185,18 @@ with open(os.path.basename(vcf_file) + '.nex', 'w') as outfile:
 	outfile.write('\t;\nEND;\n\n')
 	outfile.write(sets_block)
 
+with open(os.path.basename(vcf_file) + '_align.nex', 'w') as outfile:
+	outfile.write('#NEXUS\n\n')
+	taxa_block = ('BEGIN TAXA;\n\tDIMENSIONS NTAX=' + str(align_num_taxa) + ';\n\t' +
+				'TAXLABELS ' + ' '.join(align_samples_out) + ';\nEND;\n')
+	data_block = ('BEGIN DATA;\n\tDIMENSIONS NTAX=' + str(align_num_taxa) + ' NCHAR=' + str(num_chars) + ';\n\t' +
+				'FORMAT DATATYPE=' + datatype + ' MISSING=' + missing + ';\n\tMATRIX\n')
+	outfile.write(taxa_block + '\n')
+	outfile.write(data_block)
+	for line_out in align_lines_out:
+		outfile.write(line_out + '\n')
+	outfile.write('\t;\nEND;\n\n')
+
 
 # report completion
 if sample_excl > 0:
@@ -166,3 +206,5 @@ if samples_missed > 0:
 print('Converted a VCF file with ' + str(len(sample_labels)) + ' samples and ' + str(count_snps) +
 	' SNPs to Nexus format with ' +	str(len(pops_out)) + ' species, ' + str(len(lines_out)) +
 	' alleles and ' + str(num_chars) + ' characters')
+print('Also created the corresponding alignment for ' + str(len(align_samples_out)) +
+	' individuals and ' + str(num_chars) + ' variable sites')
