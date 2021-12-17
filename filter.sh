@@ -18,9 +18,9 @@
 # Set default parameters
 mincov="0.9"				# minimum proportion coverage of samples for a SNP
 maxm="0.4"					# maximum proportion missing data for a sample
-mind="6"					# minimum depth for a genotype
+mind="6"					# minimum depth for a genotype NOTE: NOT USED TO FILTER LOCI!
 minmd="10"					# minimum mean depth for a locus
-maxd="500"					# maximum depth for a genotype
+maxd="500"					# maximum depth for a genotype NOTE: NOTE USED TO FILTER LOCI!
 mac="3"						# alleles must occur >= this many times to be kept
 
 # Set the optional iterative filters
