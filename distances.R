@@ -20,19 +20,26 @@ suppressMessages(library(vcfR))
 
 # set colours (needs to be at least as long as number of pops or remainder will be black)
 draw_colours <- c(
-    "forestgreen",      # 22 8B 22 / 34 139 34
-    "darkslateblue",    # 48 3D 8B / 72 61 139
-    "lightskyblue",     # 87 CE FA / 135 206 250
-    "darkorange",       # FF 8C 00 / 255 140 0
-    "mediumorchid",     # BA 55 D3 / 186 85 211
-    "lawngreen",        # 7C FC 00 / 124 252 0
-	"steelblue",		# 46 82 B4 / 70	130	180
-	"aquamarine",		# 7F FF D4 / 127 255 212
-	"peru",				# CD 85 3F / 80 52 25
-	"tomato",			# FF 63 47 / 100 39 28
-	"khaki",			# F0 E6 8C / 94 90 55
-	"deeppink",			# FF 14 93 / 100 8 58
-	"slategrey"			# 70 80 90 / 44 50 56
+    rgb(13, 54, 13, max = 100),		# forestgreen
+    rgb(28, 24, 54, max = 100),		# darkslateblue
+    rgb(53, 81, 98, max = 100),		# lightskyblue
+    rgb(100, 55, 0, max = 100),		# darkorange
+    rgb(73, 33, 83, max = 100),		# mediumorchid
+    rgb(49, 99, 0, max = 100),		# lawngreen
+	rgb(28, 51, 71, max = 100),		# steelblue
+	rgb(50, 100, 83, max = 100),		# aquamarine
+	rgb(80, 52, 25, max = 100),			# peru
+	rgb(100, 39, 28, max = 100), 		# tomato
+	rgb(94, 90, 55, max = 100), 		# khaki
+	rgb(100, 8, 58, max = 100),			# deeppink
+	rgb(85, 75, 85, max = 100),			# thistle
+	rgb(86, 8, 24, max = 100),			# crimson
+	rgb(44, 50, 56, max = 100),			# slategrey
+	rgb(87, 72, 53, max = 100),			# burly wood
+	rgb(50, 0, 50, max = 100),			# purple
+	rgb(34, 62, 63, max = 100),			# cadet blue
+	rgb(86, 65, 12, max = 100),			# goldenrod
+	rgb(100, 100, 0, max = 100)			# yellow
 )
 
 
