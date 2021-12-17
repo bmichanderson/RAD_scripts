@@ -69,15 +69,12 @@ with open(vcf_file, 'r') as vcf:
 	print('Read in a VCF file with ' + str(len(sample_labels)) + ' samples and ' + str(count_snps) + ' SNP loci')
 
 
-# calculate the mean (and vcftools? version) and max depth per site
+# calculate the mean and max depth per site
 # the mean is based on only present data (no missing = 0 depth)
-# the averages are based on all samples
 means = []
-avgdp = []
 maxs = []
 for site in snps:
 	means.append(round(statistics.mean([item for item in site if item > 0])))
-	avgdp.append(round(statistics.mean(site)))
 	maxs.append(round(max(site)))
 
 
@@ -87,21 +84,17 @@ def use_max(my_list):
 
 
 # plot histograms
-fig, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex = True,
-										figsize = (12, 12))
+fig, (ax1, ax2) = plt.subplots(2, 1, sharex = True,
+										figsize = (10, 10))
 plt.subplots_adjust(hspace = 0.2)
 ax1.hist(means, density = False, range = [0, use_max(means)],
 			bins = round(use_max(means) / 5))
-ax1.set_title('Mean depth per site (non-missing)')
+ax1.set_title('Mean depth per site')
 ax1.set_ylabel('Sites')
-ax2.hist(avgdp, density = False, range = [0, use_max(avgdp)],
-			bins = round(use_max(avgdp) / 5))
-ax2.set_title('Mean depth per site (all samples)')
-ax2.set_ylabel('Sites')
-ax3.hist(maxs, density = False, range = [0, use_max(maxs)],
+ax2.hist(maxs, density = False, range = [0, use_max(maxs)],
 			bins = round(use_max(maxs) / 5))
-ax3.set_title('Maximum depth per site')
-ax3.set_ylabel('Sites')
-ax3.set_xlabel('Depth')
-ax3.set_xlim(0, use_max(maxs) + 0.01 * use_max(maxs))
-plt.savefig(out_pre + '.pdf')
+ax2.set_title('Maximum depth per site')
+ax2.set_ylabel('Sites')
+ax2.set_xlabel('Depth')
+ax2.set_xlim(0, use_max(maxs) + 0.01 * use_max(maxs))
+plt.savefig(out_pre + '_depth.pdf')
