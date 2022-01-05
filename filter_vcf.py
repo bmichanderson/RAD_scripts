@@ -104,8 +104,10 @@ with open(vcf_file, 'r') as vcf, open(out_pre + '.vcf', 'w') as outfile:
 				'''	The format is GT:DP:CATG, so 0/0:85:0,85,0,0 for a homozygous AA with 85 depth
 					We want to grab the genotype (GT) and depth (DP)
 				'''
-				genotypes.append(call.split(':')[0].split('/'))		# a list, e.g. ['0', '0']
-				depths.append(int(call.split(':')[1]))
+				gt = call.split(':')[0].split('/')		# a list, e.g. ['0', '0']
+				genotypes.append(gt)		
+				if gt != ['.', '.']:		# if not an N (shouldn't be needed, but currently is)
+					depths.append(int(call.split(':')[1]))
 			# calculate stats depending on what filters need to be applied
 			keep_locus = True
 			while keep_locus:
