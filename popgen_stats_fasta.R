@@ -21,6 +21,7 @@ help <- function(help_message) {
 		cat("\t-o\tThe output file name prefix [default output]\n")
 		cat("\t-f\tThe fasta file to be analysed (names matching samples file exactly)\n")
 		cat("\t-s\tSamples and populations as tab-delimited sample IDs and pops, one per line\n")
+		cat("\t-t\tRun Fst calculations (default: do not)\n")
 	} else {
 		cat(help_message)
 	}
@@ -49,6 +50,157 @@ mybarplot <- function(vec_val, vec_se, names, ...) {
 }
 
 
+# a function to calculate observed heterozygosity
+# this is the proportion of samples at each site that are hets
+het_measure <- function(x) {
+		y <- x[!is.na(x)]		# only account for non NA
+		if (length(y) == 0) {
+			NA
+		} else {
+			sum(!(y %in% c("a", "c", "g", "t"))) / length(y)
+		}
+	}
+
+
+# a function to calculate gene diversity
+# this is the average number of differences between sequences
+# or the probability of choosing an allele that is different
+# we can calculate this with either:
+# 1) Nei & Roychoudhury 1974: (n/n-1) * (1 - sum[(ni/n)^2])
+# 2) Hohenlohe et al. 2010: 1 - sum[(ni-1)*ni]/(n-1)*n
+# where ni = count of allele i; n = sum of allele counts
+# we'll use 2
+gd_measure <- function(x) {
+	y <- x[!is.na(x)]		# only account for non NA
+	if (length(y) == 0) {
+		NA
+	} else {
+		# first, turn the genotypes into two alleles
+		z <- vector("character", length(y) * 2)
+		index <- 1
+		for (gt in y) {
+			if (gt %in% c("a", "c", "g", "t")) {		# homo
+				z[index] <- gt
+				z[index + 1] <- gt
+				index <- index + 2
+			} else {		# het
+				if (gt == "k") {
+					b1 <- "g"
+					b2 <- "t"
+				} else if (gt == "m") {
+					b1 <- "a"
+					b2 <- "c"
+				} else if (gt == "r") {
+					b1 <- "a"
+					b2 <- "g"
+				} else if (gt == "s") {
+					b1 <- "c"
+					b2 <- "g"
+				} else if (gt == "w") {
+					b1 <- "a"
+					b2 <- "t"
+				} else if (gt == "y") {
+					b1 <- "c"
+					b2 <- "t"
+				} else {
+					stop(help("Unrecognized base!\n"), call. = FALSE)
+				}
+				z[index] <- b1
+				z[index + 1] <- b2
+				index <- index + 2
+			}
+		}
+		# now, count alleles and multiply
+		n <- length(z)
+		calcs <- 0
+		for (allele in unique(z)) {
+			count <- sum(z == allele)
+			calc <- (count - 1) * count
+			calcs <- calcs + calc
+		}
+		# return the gene diversity measure
+		1 - (calcs / ((n - 1) * n))
+	}
+}
+
+
+# a function to count alleles at each locus for later Fst
+# it returns the result of 2 * (n choose 2) = (n - 1) * n
+n_measure <- function(x) {
+	y <- x[!is.na(x)]		# only account for non NA
+	if (length(y) == 0) {
+		NA
+	} else {
+		n <- length(y) * 2
+		# return n choose 2 (without the 1/2 because cancelled later)
+		(n - 1) * n
+	}
+}
+
+
+# a function to calculate the hierfstat version of gene diversity
+# hierfstat uses an additional correction from Nei 1987
+# it also bases the stat on genotypic number rather than allelic
+# hs = (n/n-1) * (1 - sum[(ni/n)^2] - ho/2n)
+hs_measure <- function(x) {
+	y <- x[!is.na(x)]		# only account for non NA
+	if (length(y) == 0) {
+		NA
+	} else {
+		# first, calculate observed heterozygosity
+		ho <- sum(!(y %in% c("a", "c", "g", "t"))) / length(y)
+		# second, turn the genotypes into alleles for frequency calcs
+		z <- vector("character", length(y) * 2)
+		index <- 1
+		for (gt in y) {
+			if (gt %in% c("a", "c", "g", "t")) {		# homo
+				z[index] <- gt
+				z[index + 1] <- gt
+				index <- index + 2
+			} else {		# het
+				if (gt == "k") {
+					b1 <- "g"
+					b2 <- "t"
+				} else if (gt == "m") {
+					b1 <- "a"
+					b2 <- "c"
+				} else if (gt == "r") {
+					b1 <- "a"
+					b2 <- "g"
+				} else if (gt == "s") {
+					b1 <- "c"
+					b2 <- "g"
+				} else if (gt == "w") {
+					b1 <- "a"
+					b2 <- "t"
+				} else if (gt == "y") {
+					b1 <- "c"
+					b2 <- "t"
+				} else {
+					stop(help("Unrecognized base!\n"), call. = FALSE)
+				}
+				z[index] <- b1
+				z[index + 1] <- b2
+				index <- index + 2
+			}
+		}
+		# now, count alleles and multiply
+		n <- length(z)
+		calcs <- 0
+		for (allele in unique(z)) {
+			count <- sum(z == allele)
+			calc <- (count / n) ^ 2
+			calcs <- calcs + calc
+		}
+		# return the gene diversity measure
+		# hs = (n/n-1) * (1 - sum[(ni/n)^2] - ho/2n)
+		# this time, we only use sample size based on genotype
+		ng <- length(y)
+		(ng / (ng - 1)) * (1 - calcs - ho / (2 * ng))
+	}
+}
+
+
 # Read in and format the data
 
 # parse the command line
@@ -62,6 +214,7 @@ if (length(args) == 0) {
 	out_pref <- "output"
 	fasta_present <- FALSE
 	samples_present <- FALSE
+	run_fst <- FALSE
 	for (index in seq_len(length(args))) {
 		if (args[index] == "-o") {
 			out_pref <- args[index + 1]
@@ -71,6 +224,9 @@ if (length(args) == 0) {
 		} else if (args[index] == "-f") {
 			fasta_present <- TRUE
 			fasta_file <- args[index + 1]
+		} else if (args[index] == "-t") {
+			run_fst <- TRUE
+			cat("Will run Fst calculations\n")
 		} else {
 			catch_args[i] <- args[index]
 			i <- i + 1
@@ -87,9 +243,11 @@ sample_table <- read.table(samples_file, sep = "\t", header = FALSE)
 fasta <- read.dna(fasta_file, format = "fasta")
 
 
-# correct the DNA so that missing data in the form "?" is coded as NA
+# correct the DNA so that missing data is coded as NA
 mymat <- as.matrix(as.character(fasta))
 mymat[mymat == "?"] <- NA
+mymat[mymat == "n"] <- NA
+mymat[mymat == "-"] <- NA
 mydnabin <- as.DNAbin(mymat)
 
 
@@ -100,13 +258,26 @@ rownames(mydnabin) <- populations
 
 
 # set up a summary dataframe to store the resulting calculation outputs
-summary <- as.data.frame(matrix(ncol = 8, nrow = length(unique(populations))))
-colnames(summary) <- c("n", "miss", "ho", "hose", "hs", "hsse", "fis", "fisse")
+summary <- as.data.frame(matrix(ncol = 14, nrow = length(unique(populations))))
+colnames(summary) <- c("n", "miss", "ho", "hose", "he",
+					"hese", "hs", "hsse", "fis", "fisse",
+					"fiss", "fissse", "Fis", "Fiss")
 rownames(summary) <- unique(populations)
 
 
+# set up convenience dataframes to store the n counts/choose for each locus for each pop (for Fst)
+# and to store the gene diversities for each locus for each pop
+n_choose <- as.data.frame(matrix(ncol = ncol(mydnabin), nrow = length(unique(populations))))
+rownames(n_choose) <- unique(populations)
+gd_df <- as.data.frame(matrix(ncol = ncol(mydnabin), nrow = length(unique(populations))))
+rownames(gd_df) <- unique(populations)
+
+
 # cycle through populations and calculate stats
+index <- 1
 for (pop in unique(populations)) {
+	cat("Analyzing population", index, "of", length(unique(populations)), "\n")
+	index <- index + 1
 	thisdnabin <- mydnabin[rownames(mydnabin) == pop, ]
 	pop_sequences <- as.character(thisdnabin)
 
@@ -118,54 +289,62 @@ for (pop in unique(populations)) {
 	summary[pop, "miss"] <- perc_miss
 
 	# calculate observed heterozygosity
-	# this is the number of samples at each site that are hets / samples
 	hets <- matrix(ncol = length(thisdnabin[1, ]), nrow = 1)
 	rownames(hets) <- c("ho")
-	het_measure <- function(x) {
-		y <- x[!is.na(x)]		# only account for non NA
-		if (length(y) == 0) {
-			NA
+	hets["ho", ] <- apply(pop_sequences, 2, het_measure)
+	summary[pop, "ho"] <- mean(hets["ho", ], na.rm = TRUE)
+	summary[pop, "hose"] <- se(hets["ho", ])
+
+	# calculate gene/nucleotide diversity (expected heterozygosity) and store
+	gd <- matrix(ncol = length(thisdnabin[1, ]), nrow = 2)
+	rownames(gd) <- c("he", "hs")
+	gd["he", ] <- apply(pop_sequences, 2, gd_measure)
+	summary[pop, "he"] <- mean(gd["he", ], na.rm = TRUE)
+	summary[pop, "hese"] <- se(gd["he", ])
+	gd_df[pop, ] <- gd["he", ]
+	gd["hs", ] <- apply(pop_sequences, 2, hs_measure)
+	summary[pop, "hs"] <- mean(gd["hs", ], na.rm = TRUE)
+	summary[pop, "hsse"] <- se(gd["hs", ])
+
+	# calculate the allele counts per locus and choose 2, and store
+	n_choose[pop, ] <- apply(pop_sequences, 2, n_measure)
+
+	# calculate the fixation index inbreeding coefficient Fis
+	# from Nei 1977, this is: (hs - ho)/hs
+	# or 1 - ho/hs
+	# note: this only uses sites with gene diversity (not all sites)
+	# I'll run two calculations, one for he, another for hs
+	fis <- matrix(ncol = length(thisdnabin[1, ]), nrow = 2)
+	rownames(fis) <- c("fis", "fiss")
+	for (col in seq_len(ncol(gd))) {
+		if (is.na(gd["he", col])) {
+			fis["fis", col] <- NA
 		} else {
-			sum(!(y %in% c("a", "c", "g", "t"))) / length(y)
+			if (gd["he", col] == 0) {		# can't divide by zero or use site
+				fis["fis", col] <- NA
+			} else {
+				fis["fis", col] <- 1 - hets["ho", col] / gd["he", col]
+			}
+		}
+		if (is.na(gd["hs", col])) {
+			fis["fiss", col] <- NA
+		} else {
+			if (gd["hs", col] == 0) {		# can't divide by zero or use site
+				fis["fiss", col] <- NA
+			} else {
+				fis["fiss", col] <- 1 - hets["ho", col] / gd["hs", col]
+			}
 		}
 	}
-	hets["ho", ] <- apply(pop_sequences, 2, het_measure)
-	summary[pop, "ho"] <- mean(hets, na.rm = TRUE)
-	summary[pop, "hose"] <- se(hets[1, ])
+	summary[pop, "fis"] <- mean(fis["fis", ], na.rm = TRUE)
+	summary[pop, "fisse"] <- se(fis["fis", ])
+	summary[pop, "fiss"] <- mean(fis["fiss", ], na.rm = TRUE)
+	summary[pop, "fissse"] <- se(fis["fiss", ])
 
-	# calculate gene diversity / expected heterozygosity
-	# this is the average number of differences between sequences
-
-
-
+	# finally, just calculate a point estimate of Fis based on the averages
+	summary[pop, "Fis"] <- 1 - summary[pop, "ho"] / summary[pop, "he"]
+	summary[pop, "Fiss"] <- 1 - summary[pop, "ho"] / summary[pop, "hs"]
 }
-
-
-
-
-
-# convert the VCF into a hierfstat dataframe with pop and genotype
-geni <- vcfR2genind(vcf)
-populations <- sample_table$V2[match(rownames(geni@tab), sample_table$V1)]
-geni@pop <- as.factor(populations)
-my_hfst <- genind2hierfstat(geni)
-
-
-# calculate basic stats and create a summary dataframe
-print("Calculating and plotting basic popgen stats")
-bstats <- basic.stats(my_hfst)
-summary <- as.data.frame(matrix(ncol = 6, nrow = length(unique(populations))))
-colnames(summary) <- c("ho", "hose", "hs", "hsse", "fis", "fisse")
-rownames(summary) <- colnames(bstats$Ho)
-
-
-# populate the dataframe with values
-summary$ho <- apply(bstats$Ho, 2, function(x) mean(x, na.rm = TRUE))
-summary$hose <- apply(bstats$Ho, 2, se)
-summary$hs <- apply(bstats$Hs, 2, function(x) mean(x, na.rm = TRUE))
-summary$hsse <- apply(bstats$Hs, 2, se)
-summary$fis <- apply(bstats$Fis, 2, function(x) mean(x, na.rm = TRUE))
-summary$fisse <- apply(bstats$Fis, 2, se)
 
 
 # export the table to file
@@ -177,12 +356,12 @@ write.table(summary, file = paste0(out_pref, "_summary.txt"),
 pdf(paste0(out_pref, "_summary.pdf"), width = 10, height = 10)
 
 
-# graph the amount of missing data
-barplot(meanmiss, las = 2, main = "Mean missing data")
-
-
 # graph the sample sizes by pop
-barplot(sample_size, las = 2, main = "Sample size")
+barplot(summary$n, las = 2, main = "Sample size", names = rownames(summary))
+
+
+# graph the amount of missing data
+barplot(summary$miss, las = 2, main = "Missing data", names = rownames(summary))
 
 
 # graph the values by population
@@ -190,60 +369,94 @@ barplot(sample_size, las = 2, main = "Sample size")
 mybarplot(summary$ho, summary$hose * 2, names = rownames(summary),
 			main = "Ho, observed heterozygosity",
 			ylim = c(0, 1.2 * max(summary$ho)))
+mybarplot(summary$he, summary$hese * 2, names = rownames(summary),
+			main = "He, estimated gene diversity\n(expected heterozygosity)",
+			ylim = c(0, 1.2 * max(summary$he)))
 mybarplot(summary$hs, summary$hsse * 2, names = rownames(summary),
-			main = "Hs, observed gene diversity",
+			main = "Hs, estimated gene diversity\n(expected heterozygosity)",
 			ylim = c(0, 1.2 * max(summary$hs)))
 mybarplot(summary$fis, summary$fisse * 2, names = rownames(summary),
-			main = "Fis = 1 - Ho/Hs",
+			main = "Inbreeding coefficicient Fis\n(1 - Ho/He)",
 			ylim = c(1.2 * min(summary$fis), 1.2 * max(summary$fis)))
+mybarplot(summary$fiss, summary$fissse * 2, names = rownames(summary),
+			main = "Inbreeding coefficicient Fis\n(1 - Ho/Hs)",
+			ylim = c(1.2 * min(summary$fiss), 1.2 * max(summary$fiss)))
+barplot(summary$Fis, las = 2, main = "Point estimate of Fis using He",
+		names = rownames(summary))
+barplot(summary$Fiss, las = 2, main = "Point estimate of Fis using Hs",
+		names = rownames(summary))
 
 
 # stop creating the pdf
 invisible(dev.off())
 
 
-# calculate pairwise Fst
-print("Calculating and plotting pariwise Fst")
-
-# first, convert the vcf to a genlight, then add pop
-genl <- vcfR2genlight(vcf)
-pop(genl) <- populations
-
-# now use the genlight in StAMPP
-fsts <- stamppFst(genl, nboots = 100, percent = 95, nclusters = 4)
-
-
-# order the resulting pairwise matrix by row
-# NOTE: could make it the order of the input pop file?
-myfsts <- fsts$Fsts
-ord <- sort(rownames(myfsts))
-myfsts[upper.tri(myfsts)] <- t(myfsts)[upper.tri(myfsts)]
-myfsts <- myfsts[ord, ord]
-myfsts[upper.tri(myfsts)] <- NA
-
-
-# export the pairwise Fst values to file
-write.table(myfsts, file = paste0(out_pref, "_Fst.txt"),
-			quote = FALSE, row.names = FALSE)
-
-
-# start creating a pdf of plots
-pdf(paste0(out_pref, "_fst.pdf"), width = 10, height = 10)
-
-
-# plot a heatmap
-par(mar = c(5, 4, 4, 5) + 0.1)
-image(myfsts, col = hcl.colors(n = 100, palette = "greens", rev = TRUE),
-		axes = FALSE, main = "Pairwise Fst")
-axis(1, at = seq(0, 1, length.out = ncol(myfsts)),
-	labels = colnames(myfsts), las = 2, lwd.ticks = 0)
-axis(4, at = seq(0, 1, length.out = ncol(myfsts)),
-	labels = colnames(myfsts), las = 2, lwd.ticks = 0)
-
-#heatmap(myfsts, Rowv = NA, Colv = "Rowv", scale = "none",
-#	main = "Pairwise Fst", margins = c(5, 5),
-#	col = hcl.colors(n = 100, palette = "greens", rev = TRUE))
+if (run_fst) {
+	# find a way to calculate pairwise Fst for sequence data
+	# complicated --> figure out how to apply Weir and Cockerham 1984...
+	# another way would be Fst = 1 - Hs/Ht (??)
+	# this doesn't correct for small/different sample sizes
+	# we could try to implement the approach taken by Hohenlohe et al. 2010
+	# Fst = 1 - [(nj - 1) * nj * hej + (nk - 1) * nk * hek] / heT * [(nj - 1) * nj + (nk - 1) * nk]
+	# where heT is gd_measure of the combined two populations
+	pops <- unique(populations)
+	fst_mat <- matrix(ncol = length(pops), nrow = length(pops))
+	rownames(fst_mat) <- pops
+	colnames(fst_mat) <- pops
+	for (index in seq_len(length(pops) - 1)) {
+		cat("Calculating Fst for pop", index, "versus ")
+		pop <- pops[index]
+		for (index2 in (index + 1): length(pops)) {
+			cat(index2, "")
+			pop2 <- pops[index2]
+			# determine total diversity
+			thisdnabin <- mydnabin[rownames(mydnabin) %in% c(pop, pop2), ]
+			pop_sequences <- as.character(thisdnabin)
+			total_he <- apply(pop_sequences, 2, gd_measure)
+			total_he[total_he == 0] <- NA				# set to NA to avoid 0 in denominator
+			# only want to look at sites with non-NA
+			indices <- which(!is.na(total_he))
+			het <- total_he[indices]
+			he1 <- gd_df[pop, ][indices]
+			n1 <- n_choose[pop, ][indices]
+			he2 <- gd_df[pop2, ][indices]
+			n2 <- n_choose[pop2, ][indices]
+			# calculate pairwise Fst for each locus
+			fsts <- 1 - ((n1 * he1 + n2 * he2) / (het * (n1 + n2)))
+			# record the mean
+			fst_mat[index, index2] <- mean(as.matrix(fsts), na.rm = TRUE)
+		}
+		cat("\n")
+	}
 
 
-# stop creating the pdf
-invisible(dev.off())
+	# order the resulting pairwise matrix by row
+	myfsts <- fst_mat
+	ord <- sort(rownames(myfsts))
+	myfsts[lower.tri(myfsts)] <- t(myfsts)[lower.tri(myfsts)]
+	myfsts <- myfsts[ord, ord]
+	myfsts[upper.tri(myfsts)] <- NA
+
+
+	# export the pairwise Fst values to file
+	write.table(myfsts, file = paste0(out_pref, "_Fst.txt"),
+				quote = FALSE, row.names = TRUE)
+
+
+	# start creating a pdf of plots
+	pdf(paste0(out_pref, "_fst.pdf"), width = 10, height = 10)
+
+
+	# plot a heatmap
+	par(mar = c(5, 4, 4, 5) + 0.1)
+	image(myfsts, col = hcl.colors(n = 100, palette = "greens", rev = TRUE),
+			axes = FALSE, main = "Pairwise Fst")
+	axis(1, at = seq(0, 1, length.out = ncol(myfsts)),
+		labels = colnames(myfsts), las = 2, lwd.ticks = 0)
+	axis(4, at = seq(0, 1, length.out = ncol(myfsts)),
+		labels = colnames(myfsts), las = 2, lwd.ticks = 0)
+
+
+	# stop creating the pdf
+	invisible(dev.off())
+}
