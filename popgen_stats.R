@@ -24,6 +24,7 @@ help <- function(help_message) {
 		cat("\t-o\tThe output file name prefix [default output]\n")
 		cat("\t-v\tThe VCF file to be analysed\n")
 		cat("\t-s\tSamples and populations as tab-delimited sample IDs and pops, one per line\n")
+		cat("\t-t\tRun Fst calculations (default: do not)\n")
 	} else {
 		cat(help_message)
 	}
@@ -66,6 +67,7 @@ if (length(args) == 0) {
 	vcf_present <- FALSE
 	fasta_present <- FALSE
 	samples_present <- FALSE
+	run_fst <- FALSE
 	for (index in seq_len(length(args))) {
 		if (args[index] == "-o") {
 			out_pref <- args[index + 1]
@@ -75,6 +77,9 @@ if (length(args) == 0) {
 		} else if (args[index] == "-v") {
 			vcf_present <- TRUE
 			vcf_file <- args[index + 1]
+		} else if (args[index] == "-t") {
+			run_fst <- TRUE
+			cat("Will run Fst calculations\n")
 		} else {
 			catch_args[i] <- args[index]
 			i <- i + 1
@@ -115,12 +120,14 @@ my_hfst <- genind2hierfstat(geni)
 # calculate basic stats and create a summary dataframe
 print("Calculating and plotting basic popgen stats")
 bstats <- basic.stats(my_hfst)
-summary <- as.data.frame(matrix(ncol = 6, nrow = length(unique(populations))))
-colnames(summary) <- c("ho", "hose", "hs", "hsse", "fis", "fisse")
+summary <- as.data.frame(matrix(ncol = 8, nrow = length(unique(populations))))
+colnames(summary) <- c("n", "miss", "ho", "hose", "hs", "hsse", "fis", "fisse")
 rownames(summary) <- colnames(bstats$Ho)
 
 
 # populate the dataframe with values
+summary$n <- sample_size
+summary$miss <- meanmiss
 summary$ho <- apply(bstats$Ho, 2, function(x) mean(x, na.rm = TRUE))
 summary$hose <- apply(bstats$Ho, 2, se)
 summary$hs <- apply(bstats$Hs, 2, function(x) mean(x, na.rm = TRUE))
@@ -138,12 +145,13 @@ write.table(summary, file = paste0(out_pref, "_summary.txt"),
 pdf(paste0(out_pref, "_summary.pdf"), width = 10, height = 10)
 
 
-# graph the amount of missing data
-barplot(meanmiss, las = 2, main = "Mean missing data")
-
-
 # graph the sample sizes by pop
-barplot(sample_size, las = 2, main = "Sample size")
+barplot(summary$n, las = 2, main = "Sample size", names = rownames(summary))
+
+
+# graph the amount of missing data
+barplot(summary$miss, las = 2, main = "Mean missing data",
+		names = rownames(summary))
 
 
 # graph the values by population
@@ -152,10 +160,10 @@ mybarplot(summary$ho, summary$hose * 2, names = rownames(summary),
 			main = "Ho, observed heterozygosity",
 			ylim = c(0, 1.2 * max(summary$ho)))
 mybarplot(summary$hs, summary$hsse * 2, names = rownames(summary),
-			main = "Hs, observed gene diversity",
+			main = "Hs, estimated gene diversity\n(expected heterozygosity)",
 			ylim = c(0, 1.2 * max(summary$hs)))
 mybarplot(summary$fis, summary$fisse * 2, names = rownames(summary),
-			main = "Fis = 1 - Ho/Hs",
+			main = "Inbreeding coefficient, Fis\n(1 - Ho/Hs)",
 			ylim = c(1.2 * min(summary$fis), 1.2 * max(summary$fis)))
 
 
@@ -163,44 +171,51 @@ mybarplot(summary$fis, summary$fisse * 2, names = rownames(summary),
 invisible(dev.off())
 
 
-# calculate pairwise Fst
-print("Calculating and plotting pariwise Fst")
-
-# first, convert the vcf to a genlight, then add pop
-genl <- vcfR2genlight(vcf)
-pop(genl) <- populations
-
-# now use the genlight in StAMPP
-fsts <- stamppFst(genl, nboots = 100, percent = 95, nclusters = 4)
+if (run_fst) {
+	# calculate pairwise Fst
+	print("Calculating and plotting pariwise Fst")
 
 
-# order the resulting pairwise matrix by row
-# NOTE: could make it the order of the input pop file?
-myfsts <- fsts$Fsts
-ord <- sort(rownames(myfsts))
-myfsts[upper.tri(myfsts)] <- t(myfsts)[upper.tri(myfsts)]
-myfsts <- myfsts[ord, ord]
-myfsts[upper.tri(myfsts)] <- NA
+	# first, convert the vcf to a genlight, then add pop
+	genl <- vcfR2genlight(vcf)
+	pop(genl) <- populations
 
 
-# export the pairwise Fst values to file
-write.table(myfsts, file = paste0(out_pref, "_Fst.txt"),
-			quote = FALSE, row.names = FALSE)
+	# now use the genlight in StAMPP
+	# this calculates Fst following Weir and Cockerham 1984
+	# if wanting to get confidence intervals, use e.g.
+	# nboots = 100, percent = 95, nclusters = 4
+	fsts <- stamppFst(genl, nboots = 1)
 
 
-# start creating a pdf of plots
-pdf(paste0(out_pref, "_fst.pdf"), width = 10, height = 10)
+	# order the resulting pairwise matrix by row
+	# if using the confidence intervals: myfsts <- fsts$Fsts
+	myfsts <- fsts
+	ord <- sort(rownames(myfsts))
+	myfsts[upper.tri(myfsts)] <- t(myfsts)[upper.tri(myfsts)]
+	myfsts <- myfsts[ord, ord]
+	myfsts[upper.tri(myfsts)] <- NA
 
 
-# plot a heatmap
-par(mar = c(5, 4, 4, 5) + 0.1)
-image(myfsts, col = hcl.colors(n = 100, palette = "greens", rev = TRUE),
-		axes = FALSE, main = "Pairwise Fst")
-axis(1, at = seq(0, 1, length.out = ncol(myfsts)),
-	labels = colnames(myfsts), las = 2, lwd.ticks = 0)
-axis(4, at = seq(0, 1, length.out = ncol(myfsts)),
-	labels = colnames(myfsts), las = 2, lwd.ticks = 0)
+	# export the pairwise Fst values to file
+	write.table(myfsts, file = paste0(out_pref, "_Fst.txt"),
+				quote = FALSE, row.names = TRUE)
 
 
-# stop creating the pdf
-invisible(dev.off())
+	# start creating a pdf
+	pdf(paste0(out_pref, "_fst.pdf"), width = 10, height = 10)
+
+
+	# plot a heatmap
+	par(mar = c(5, 4, 4, 5) + 0.1)
+	image(myfsts, col = hcl.colors(n = 100, palette = "greens", rev = TRUE),
+			axes = FALSE, main = "Pairwise Fst")
+	axis(1, at = seq(0, 1, length.out = ncol(myfsts)),
+		labels = colnames(myfsts), las = 2, lwd.ticks = 0)
+	axis(4, at = seq(0, 1, length.out = ncol(myfsts)),
+		labels = colnames(myfsts), las = 2, lwd.ticks = 0)
+
+
+	# stop creating the pdf
+	invisible(dev.off())
+}
