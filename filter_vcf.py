@@ -10,6 +10,7 @@
 import sys
 import argparse
 import statistics
+import random
 
 
 # instantiate the parser
@@ -27,7 +28,7 @@ parser.add_argument('--maxd', type = int, dest = 'maxd', help = 'The maximum cal
 parser.add_argument('--maxmd', type = int, dest = 'maxmd', help = 'The maximum mean call depth for a locus to keep it')
 parser.add_argument('--mind', type = int, dest = 'mind', help = 'The minimum call depth found anywhere in a locus to keep it')
 parser.add_argument('--minmd', type = int, dest = 'minmd', help = 'The minimum mean call depth for a locus to keep it')
-
+parser.add_argument('-d', type = int, dest = 'rand', help = 'Randomly downsample to this many SNPs')
 
 
 # parse the command line
@@ -47,6 +48,7 @@ maxd = args.maxd
 maxmd = args.maxmd
 mind = args.mind
 minmd = args.minmd
+random_down = args.rand
 
 if not vcf_file:
 	parser.print_help(sys.stderr)
@@ -69,6 +71,7 @@ with open(vcf_file, 'r') as vcf, open(out_pre + '.vcf', 'w') as outfile:
 	in_snps = 0
 	in_samples = 0
 	out_snps = 0
+	outlines = []
 	for line in vcf:
 		if line.startswith('#'):		# a header INFO line
 			if line.startswith('#CHROM'):		# the line with sample names
@@ -138,11 +141,21 @@ with open(vcf_file, 'r') as vcf, open(out_pre + '.vcf', 'w') as outfile:
 							keep_locus = False
 					else:
 						keep_locus = False
-				# write the locus if it should be kept
+				# retain the locus if it should be kept
 				if keep_locus:
 					newline = '\t'.join(pieces[:9] + calls)
-					outfile.write(newline + '\n')
+					outlines.append(newline + '\n')
 					out_snps = out_snps + 1
 					break
-	print('Read a VCF file with ' + str(in_samples) + ' samples and ' + str(in_snps) + ' SNP loci' +
-		' and filtered it to ' + str(len(sample_labels)) + ' samples and ' + str(out_snps) + ' SNP loci')
+	# randomly downsample the SNPs to the desired number if requested
+	if random_down:
+		if len(outlines) > random_down:
+			new_lines = random.sample(outlines, random_down)
+			outlines = new_lines
+			out_snps = random_down
+			print('Randomly downsampled filtered SNPs to ' + str(random_down) + ' SNPs')
+	# write the output lines
+	for line in outlines:
+		outfile.write(line)
+	print('Read a VCF file with ' + str(in_samples) + ' samples and ' + str(in_snps) + ' SNPs' +
+		' and filtered it to ' + str(len(sample_labels)) + ' samples and ' + str(out_snps) + ' SNPs')
