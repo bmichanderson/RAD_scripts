@@ -158,13 +158,14 @@ barplot(summary$miss, las = 2, main = "Mean missing data",
 # also, use a confidence interval of +/- 2 * SE
 mybarplot(summary$ho, summary$hose * 2, names = rownames(summary),
 			main = "Ho, observed heterozygosity",
-			ylim = c(0, 1.2 * max(summary$ho)))
+			ylim = c(0, 1.2 * max(summary$ho + summary$hose * 2)))
 mybarplot(summary$hs, summary$hsse * 2, names = rownames(summary),
 			main = "Hs, estimated gene diversity\n(expected heterozygosity)",
-			ylim = c(0, 1.2 * max(summary$hs)))
+			ylim = c(0, 1.2 * max(summary$hs + summary$hsse * 2)))
 mybarplot(summary$fis, summary$fisse * 2, names = rownames(summary),
 			main = "Inbreeding coefficient, Fis\n(1 - Ho/Hs)",
-			ylim = c(1.2 * min(summary$fis), 1.2 * max(summary$fis)))
+			ylim = c(1.2 * min(summary$fis - summary$fisse * 2),
+					1.2 * max(summary$fis + summary$fisse * 2)))
 
 
 # stop creating the pdf
