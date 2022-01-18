@@ -377,12 +377,12 @@ mybarplot(summary$hs, summary$hsse * 2, names = rownames(summary),
 			ylim = c(0, 1.2 * max(summary$hs + summary$hsse * 2)))
 mybarplot(summary$fis, summary$fisse * 2, names = rownames(summary),
 			main = "Inbreeding coefficicient Fis\n(1 - Ho/He)",
-			ylim = c(1.2 * min(summary$fis - summary$fisse * 2),
-					1.2 * max(summary$fis + summary$fisse * 2)))
+			ylim = c(1.2 * min(c(0, summary$fis - summary$fisse * 2)),
+					1.2 * max(c(0, summary$fis + summary$fisse * 2))))
 mybarplot(summary$fiss, summary$fissse * 2, names = rownames(summary),
 			main = "Inbreeding coefficicient Fis\n(1 - Ho/Hs)",
-			ylim = c(1.2 * min(summary$fiss - summary$fissse * 2),
-					1.2 * max(summary$fiss + summary$fissse * 2)))
+			ylim = c(1.2 * min(c(0, summary$fiss - summary$fissse * 2)),
+					1.2 * max(c(0, summary$fiss + summary$fissse * 2))))
 barplot(summary$Fis, las = 2, main = "Point estimate of Fis using He",
 		names = rownames(summary))
 barplot(summary$Fiss, las = 2, main = "Point estimate of Fis using Hs",

@@ -93,11 +93,10 @@ if (any(c(! vcf_present, ! samples_present))) {
 
 # read in the input files
 sample_table <- read.table(samples_file, sep = "\t", header = FALSE)
-if (vcf_present) {
-	vcf <- read.vcfR(vcf_file, verbose = FALSE)
-	cat("Read in a VCF with", ncol(vcf@gt) - 1, "samples,",
-		length(unique(vcf@fix[, 1])), "loci and", nrow(vcf@fix), "SNPs\n")
-}
+vcf <- read.vcfR(vcf_file, verbose = FALSE)
+cat("Read in a VCF with", ncol(vcf@gt) - 1, "samples,",
+	length(unique(vcf@fix[, 1])), "loci and", nrow(vcf@fix), "SNPs\n")
+
 
 
 # calculate amount of missing data, and average per pop
@@ -164,8 +163,8 @@ mybarplot(summary$hs, summary$hsse * 2, names = rownames(summary),
 			ylim = c(0, 1.2 * max(summary$hs + summary$hsse * 2)))
 mybarplot(summary$fis, summary$fisse * 2, names = rownames(summary),
 			main = "Inbreeding coefficient, Fis\n(1 - Ho/Hs)",
-			ylim = c(1.2 * min(summary$fis - summary$fisse * 2),
-					1.2 * max(summary$fis + summary$fisse * 2)))
+			ylim = c(1.2 * min(c(0, summary$fis - summary$fisse * 2)),
+					1.2 * max(c(0, summary$fis + summary$fisse * 2))))
 
 
 # stop creating the pdf
@@ -174,7 +173,7 @@ invisible(dev.off())
 
 if (run_fst) {
 	# calculate pairwise Fst
-	print("Calculating and plotting pariwise Fst")
+	print("Calculating and plotting pairwise Fst")
 
 
 	# first, convert the vcf to a genlight, then add pop
