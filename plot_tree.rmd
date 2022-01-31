@@ -20,8 +20,8 @@ Set your working directory, which has the tree file in it (and other files of in
 The outgroup file has a single tip label per line.
 The clade file has a search term per line (or multiple, tab separated) for taxa in a clade for collapsing.
 ```{r}
-setwd("~/WORKING/GAP_Conservation/Isopogon/full/svd_Isopogon/phylo_ind/")
-treefile <- "concord.tre"
+setwd("~/WORKING/GAP_Conservation/Wurmbea/full/svd_Wurmbea/phylo_ind/")
+treefile <- "concord2.tre"
 outgroup_file <- "outgroup.txt"
 clade_file <- "clades.txt"
 ```
@@ -108,7 +108,9 @@ See: https://stackoverflow.com/a/34405198
 We can use earlier plots to decide which clades we want to collapse
 
 First, determine the formatting for the plot and plot it (set up coordinates).
-Change this function to the way you want the tree to look.
+Change the function to the way you want the tree to look.
+
+For a cladogram:
 ```{r}
 collapse_tree <- function(phylo, ...) {
 	plot.phylo(ladderize(phylo, right = FALSE),
@@ -120,6 +122,18 @@ collapse_tree <- function(phylo, ...) {
 }
 ```
 
+Or for a phylogram:
+```{r}
+collapse_tree <- function(phylo, ...) {
+	plot.phylo(ladderize(phylo, right = FALSE),
+				no.margin = TRUE,
+				font = 1,
+				...)
+}
+```
+
+
+Now run the plotting and collapsing of clades
 ```{r}
 # plot the tree to get a coordinate system (change to the format desired)
 collapse_tree(tree)
@@ -243,7 +257,7 @@ Plot concordance as a pie chart on nodes
 ```{r}
 nodelabels(pie = concord_df,
 			piecol = c("white", "lightgrey", "darkgrey", "black"),
-			cex = 0.5)
+			cex = 0.75)
 ```
 
 Add a scale bar if applicable
