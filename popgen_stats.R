@@ -195,6 +195,7 @@ if (run_fst) {
 	myfsts[upper.tri(myfsts)] <- t(myfsts)[upper.tri(myfsts)]
 	myfsts <- myfsts[ord, ord]
 	myfsts[upper.tri(myfsts)] <- NA
+	diag(myfsts) <- 0
 
 
 	# export the pairwise Fst values to file
@@ -207,14 +208,31 @@ if (run_fst) {
 
 
 	# plot a heatmap
+	# for making legend, see https://stackoverflow.com/a/13355440 and https://stackoverflow.com/a/70522655
 	par(mar = c(5, 4, 4, 5) + 0.1)
-	image(myfsts, col = hcl.colors(n = 100, palette = "greens", rev = TRUE),
-			axes = FALSE, main = "Pairwise Fst")
+	# heatmap
+	image(myfsts, col = c("#FFFFFF", hcl.colors(n = 100, palette = "greens", rev = TRUE)),
+			axes = FALSE, main = "Pairwise Fst", useRaster = TRUE)
 	axis(1, at = seq(0, 1, length.out = ncol(myfsts)),
 		labels = colnames(myfsts), las = 2, lwd.ticks = 0)
 	axis(4, at = seq(0, 1, length.out = ncol(myfsts)),
 		labels = colnames(myfsts), las = 2, lwd.ticks = 0)
-
+	# legend
+	subx <- grconvertX(c(0, 0.2), from = "user", to = "ndc")
+	suby <- grconvertY(c(0.5, 1), from = "user", to = "ndc")
+	op <- par(fig = c(subx, suby),
+			mar = c(1, 1, 1, 0),
+			new = TRUE)
+	legend_colours <- as.raster(c(hcl.colors(n = 100, palette = "greens"), "#FFFFFF"))
+	legend_seq <- seq(0, max(myfsts, na.rm = TRUE), length = 5)
+	legend_labels <- format(round(legend_seq, 2), nsmall = 2)
+	plot(x = c(0, 2), y = c(0, 1), type = "n",
+		axes = FALSE, xlab = "", ylab = "", main = "")
+	axis(side = 4, at = seq(0, 1, length = 5), pos = 1, labels = FALSE,
+		col = 0, col.ticks = 1)
+	mtext(legend_labels, side = 4, line = -0.5, at = seq(0, 1, length = 5), las = 2)
+	rasterImage(legend_colours, xleft = 0, ybottom = 0, xright = 1, ytop = 1)
+	par(op)
 
 	# stop creating the pdf
 	invisible(dev.off())
