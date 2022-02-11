@@ -142,6 +142,7 @@ n_measure <- function(x) {
 # hierfstat uses an additional correction from Nei 1987
 # it also bases the stat on genotypic number rather than allelic
 # hs = (n/n-1) * (1 - sum[(ni/n)^2] - ho/2n)
+# I'm now no longer using this
 hs_measure <- function(x) {
 	y <- x[!is.na(x)]		# only account for non NA
 	if (length(y) == 0) {
@@ -258,20 +259,20 @@ rownames(mydnabin) <- populations
 
 
 # set up a summary dataframe to store the resulting calculation outputs
-summary <- as.data.frame(matrix(ncol = 14, nrow = length(unique(populations))))
+summary <- as.data.frame(matrix(ncol = 8, nrow = length(unique(populations))))
 colnames(summary) <- c("n", "miss", "ho", "hose", "he",
-					"hese", "hs", "hsse", "fis", "fisse",
-					"fiss", "fissse", "Fis", "Fiss")
+					"hese", "fis", "fisse")
 rownames(summary) <- unique(populations)
 
 
 # set up convenience dataframes to store the n counts/choose for each locus for each pop (for Fst)
 # and to store the gene diversities for each locus for each pop
-n_choose <- as.data.frame(matrix(ncol = ncol(mydnabin), nrow = length(unique(populations))))
-rownames(n_choose) <- unique(populations)
-gd_df <- as.data.frame(matrix(ncol = ncol(mydnabin), nrow = length(unique(populations))))
-rownames(gd_df) <- unique(populations)
-
+if (run_fst) {
+	n_choose <- as.data.frame(matrix(ncol = ncol(mydnabin), nrow = length(unique(populations))))
+	rownames(n_choose) <- unique(populations)
+	gd_df <- as.data.frame(matrix(ncol = ncol(mydnabin), nrow = length(unique(populations))))
+	rownames(gd_df) <- unique(populations)
+}
 
 # cycle through populations and calculate stats
 index <- 1
@@ -301,19 +302,18 @@ for (pop in unique(populations)) {
 	gd["he", ] <- apply(pop_sequences, 2, gd_measure)
 	summary[pop, "he"] <- mean(gd["he", ], na.rm = TRUE)
 	summary[pop, "hese"] <- se(gd["he", ])
-	gd_df[pop, ] <- gd["he", ]
-	gd["hs", ] <- apply(pop_sequences, 2, hs_measure)
-	summary[pop, "hs"] <- mean(gd["hs", ], na.rm = TRUE)
-	summary[pop, "hsse"] <- se(gd["hs", ])
 
-	# calculate the allele counts per locus and choose 2, and store
-	n_choose[pop, ] <- apply(pop_sequences, 2, n_measure)
+	if (run_fst) {
+		# store the diversity
+		gd_df[pop, ] <- gd["he", ]
+		# calculate the allele counts per locus and choose 2, and store
+		n_choose[pop, ] <- apply(pop_sequences, 2, n_measure)
+	}
 
 	# calculate the fixation index inbreeding coefficient Fis
 	# from Nei 1977, this is: (hs - ho)/hs
 	# or 1 - ho/hs
 	# note: this only uses sites with gene diversity (not all sites)
-	# I'll run two calculations, one for he, another for hs
 	fis <- matrix(ncol = length(thisdnabin[1, ]), nrow = 2)
 	rownames(fis) <- c("fis", "fiss")
 	for (col in seq_len(ncol(gd))) {
@@ -326,24 +326,9 @@ for (pop in unique(populations)) {
 				fis["fis", col] <- 1 - hets["ho", col] / gd["he", col]
 			}
 		}
-		if (is.na(gd["hs", col])) {
-			fis["fiss", col] <- NA
-		} else {
-			if (gd["hs", col] == 0) {		# can't divide by zero or use site
-				fis["fiss", col] <- NA
-			} else {
-				fis["fiss", col] <- 1 - hets["ho", col] / gd["hs", col]
-			}
-		}
 	}
 	summary[pop, "fis"] <- mean(fis["fis", ], na.rm = TRUE)
 	summary[pop, "fisse"] <- se(fis["fis", ])
-	summary[pop, "fiss"] <- mean(fis["fiss", ], na.rm = TRUE)
-	summary[pop, "fissse"] <- se(fis["fiss", ])
-
-	# finally, just calculate a point estimate of Fis based on the averages
-	summary[pop, "Fis"] <- 1 - summary[pop, "ho"] / summary[pop, "he"]
-	summary[pop, "Fiss"] <- 1 - summary[pop, "ho"] / summary[pop, "hs"]
 }
 
 
@@ -372,21 +357,10 @@ mybarplot(summary$ho, summary$hose * 2, names = rownames(summary),
 mybarplot(summary$he, summary$hese * 2, names = rownames(summary),
 			main = "He, estimated gene diversity\n(expected heterozygosity)",
 			ylim = c(0, 1.2 * max(summary$he + summary$hese * 2)))
-mybarplot(summary$hs, summary$hsse * 2, names = rownames(summary),
-			main = "Hs, estimated gene diversity\n(expected heterozygosity)",
-			ylim = c(0, 1.2 * max(summary$hs + summary$hsse * 2)))
 mybarplot(summary$fis, summary$fisse * 2, names = rownames(summary),
 			main = "Inbreeding coefficicient Fis\n(1 - Ho/He)",
 			ylim = c(1.2 * min(c(0, summary$fis - summary$fisse * 2)),
 					1.2 * max(c(0, summary$fis + summary$fisse * 2))))
-mybarplot(summary$fiss, summary$fissse * 2, names = rownames(summary),
-			main = "Inbreeding coefficicient Fis\n(1 - Ho/Hs)",
-			ylim = c(1.2 * min(c(0, summary$fiss - summary$fissse * 2)),
-					1.2 * max(c(0, summary$fiss + summary$fissse * 2))))
-barplot(summary$Fis, las = 2, main = "Point estimate of Fis using He",
-		names = rownames(summary))
-barplot(summary$Fiss, las = 2, main = "Point estimate of Fis using Hs",
-		names = rownames(summary))
 
 
 # stop creating the pdf
