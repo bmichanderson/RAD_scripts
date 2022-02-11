@@ -119,6 +119,13 @@ my_hfst <- genind2hierfstat(geni)
 # calculate basic stats and create a summary dataframe
 print("Calculating and plotting basic popgen stats")
 bstats <- basic.stats(my_hfst)
+# if there was only one pop, hierfst adds a dummy pop, which breaks my code, so only keep the first column
+if (length(unique(populations)) == 1) {
+	bstats$Ho <- data.frame(bstats$Ho[, 1])
+	bstats$Hs <- data.frame(bstats$Hs[, 1])
+	bstats$Fis <- data.frame(bstats$Fis[, 1])
+	colnames(bstats$Ho) <- populations[1]
+}
 summary <- as.data.frame(matrix(ncol = 8, nrow = length(unique(populations))))
 colnames(summary) <- c("n", "miss", "ho", "hose", "hs", "hsse", "fis", "fisse")
 rownames(summary) <- colnames(bstats$Ho)
