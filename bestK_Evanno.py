@@ -61,27 +61,35 @@ like_df.rename(columns = {	0: 'K',
 # dK	= mean [|L''(K)|] / std [L(K)]
 # dK	= mean [|L(K + 1) - 2 L(K) + L(K - 1)|] / std [L(K)]
 
-# compute mean and (double) standard deviations, and values needed for deltaK
+# compute mean and standard deviation, and values needed for deltaK
 like_comps = like_df.groupby('K').agg([np.mean, np.std])
 like_comps = like_comps['Likelihood']
-like_comps.loc[:, 'double_std'] = like_comps['std'] * 2
 like_comps.loc[:, 'Lprime'] = like_comps['mean'] - like_comps['mean'].shift(1)
 like_comps.loc[:, 'absLdprime'] = np.abs(like_comps['Lprime'].shift(-1) - like_comps['Lprime'])
 like_comps.loc[:, 'deltaK'] = like_comps['absLdprime'] / like_comps['std']
 
 
-# plot visualizations of likelihoods and deltaK
-fig, (ax1, ax2) = plt.subplots(2, 1, sharex = True, figsize = (12, 12))
+# plot visualizations of log probabilities and deltaK
+fig, (ax1, ax2) = plt.subplots(2, 1, sharex = True, figsize = (7, 9))
 plt.subplots_adjust(hspace = 0.2)
+plt.rcParams['font.size'] = 22
 like_comps.plot(y = 'mean', marker = '.', markersize = 12,
-					title = 'Likelihood L(K) (+/-SD)', legend = False,
+					title = 'Log Prob of Data L(K)', legend = False,
 					linewidth = 0.75, color = 'steelblue', ax = ax1)
-like_df.boxplot('Likelihood', 'K', ax = ax1, positions = like_comps.index,
-				color = 'black')
+ax1.grid()
+ax1.errorbar(x = like_comps.index, y = like_comps['mean'], yerr = like_comps['std'],
+			fmt = 'none', color = 'black', capsize = 4, elinewidth = 1, zorder = 3)
 ax1.get_figure().suptitle('')
+ax1.set_title('Log Prob of Data L(K)')
+ax1.ticklabel_format(style = 'sci', axis = 'y', scilimits = (0, 0))
+ax1.yaxis.get_offset_text().set_fontsize(18)
+ax1.yaxis.set_tick_params(labelsize = 18)
 like_comps.plot(y = 'deltaK', marker = '.', markersize = 12,
-					title = 'deltaK', legend = False,
+					title = '\u0394K', legend = False,
 					color = 'steelblue', ax = ax2)
-ax2.set_xlabel('K')
+ax2.set_xlabel('K', fontsize = 22)
 ax2.set_xticks(like_comps.index)
+ax2.xaxis.set_tick_params(labelsize = 18)
+ax2.yaxis.set_tick_params(labelsize = 18)
+plt.grid()
 plt.savefig(out_pre + '.pdf')
