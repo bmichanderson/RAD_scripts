@@ -11,17 +11,13 @@ Pass the complicated Nexus tree to that script, then use the output for plotting
 
 The input tree should be in Newick format. That format can include node labels.
 
-Load libraries
-```{r}
-suppressMessages(library(ape))
-```
-
-Set your working directory, which has the tree file in it (and other files of interest, e.g. taxon sets)
+Load libraries and set your working directory, which has the tree file in it (and other files of interest, e.g. taxon sets)
 The outgroup file has a single tip label per line.
 The clade file has a search term per line (or multiple, tab separated) for taxa in a clade for collapsing.
 ```{r}
-setwd("~/WORKING/GAP_Conservation/Wurmbea/full/svd_Wurmbea/phylo_ind/")
-treefile <- "concord2.tre"
+suppressMessages(library(ape))
+setwd("~/PROJECT/GAP_Conservation/Isopogon/full/svd_Isopogon/phylo_ind/")
+treefile <- "bootcon_mod.tre"
 outgroup_file <- "outgroup.txt"
 clade_file <- "clades.txt"
 ```
@@ -71,12 +67,12 @@ if (file.exists(outgroup_file)) {
 
 Start a graphics device if wanting to output (svg if collapsing nodes)
 ```{r}
-svg("test_out.svg", width = 10, height = 30)
+svg("test_out.svg", width = 7, height = 21)
 ```
 
-(pdf otherwise)
+Or pdf if just wanting a quick plot
 ```{r}
-pdf("test_out.pdf", width = 10, height = 30)
+pdf("test_out.pdf", width = 7, height = 21)
 ```
 
 If desired, plot the tree as a cladogram
@@ -93,7 +89,7 @@ Or plot as a tree with edge lengths
 plot.phylo(ladderize(tree, right = FALSE),
 			no.margin = TRUE,
 			font = 1)
-add.scale.bar(font = 1)
+add.scale.bar(x = 0.1, y = -1, font = 1)
 ```
 
 Stop creating the graphic, if started earlier and not wanting to collapse nodes
@@ -102,10 +98,10 @@ invisible(dev.off())
 ```
 
 
-Collapse clades into triangles with/without an annotation
+Collapse clades into triangles
 Perhaps modify N. Cusimano's function (https://www.en.sysbot.bio.lmu.de/people/employees/cusimano/use_r/mapping.R)?
-See: https://stackoverflow.com/a/34405198
-We can use earlier plots to decide which clades we want to collapse
+See also: https://stackoverflow.com/a/34405198
+We can use the quick plot above to decide which clades we want to collapse
 
 First, determine the formatting for the plot and plot it (set up coordinates).
 Change the function to the way you want the tree to look.
@@ -198,13 +194,17 @@ for (index in seq_len(length(clade_lines))) {
 
 # now plot the tree with the edges and tips of interest removed
 mytree <- tree
+# set tip labels to be dropped to NA
 all_drops <- unlist(tips_drop)
 mytree$tip.label[match(all_drops, mytree$tip.label)] <- NA
+# determine the edges in the original tree and their order in the ladderized one
+# designate the edges as unique combos of column values in the tree$edge table
 all_edges <- unlist(edges_drop)
-edge_combos <- tree$edge[all_edges, ]	# the edges are specific to the unaltered tree
+edge_combos <- tree$edge[all_edges, ]	# the edge order is specific to the unaltered tree
 edges_char <- paste0(as.character(edge_combos[, 1]), "_", as.character(edge_combos[, 2]))
 new_edges_char <- paste0(as.character(lastplot$edge[, 1]), "_",
 						as.character(lastplot$edge[, 2]))
+# set the specific edges to have width -1
 edge_widths <- rep(1, nrow(mytree$edge))
 edge_widths[new_edges_char %in% edges_char] <- -1
 collapse_tree(mytree, edge.width = edge_widths)
@@ -238,7 +238,7 @@ nodelabels(tree$node.label, adj = c(-0.05, 0.5), frame = "none")
 If using concordance factors as labels, capture as a dataframe
 This works if captured with my `concord_to_newick.py` script: "sCF/sDF1/sDF2"
 ```{r}
-concord_df <- data.frame(matrix(ncol = 4, nrow = tree$Nnode))
+concord_df <- data.frame(matrix(ncol = 3, nrow = tree$Nnode))
 index <- 1
 for (label in tree$node.label) {
 	if (any(label == "", label == "Root")) {
@@ -250,19 +250,18 @@ for (label in tree$node.label) {
 	index <- index + 1
 }
 concord_df <- as.data.frame(lapply(concord_df, as.numeric))
-concord_df[, 4] <- abs(100 - (concord_df[, 1] + concord_df[, 2] + concord_df[, 3]))
 ```
 
 Plot concordance as a pie chart on nodes
 ```{r}
 nodelabels(pie = concord_df,
-			piecol = c("white", "lightgrey", "darkgrey", "black"),
-			cex = 0.75)
+			piecol = c("white", "grey", "black"),
+			cex = 1)
 ```
 
 Add a scale bar if applicable
 ```{r}
-add.scale.bar(font = 1)
+add.scale.bar(x = 0.1, y = -1, font = 1)
 ```
 
 Stop creating the graphic, if started earlier
