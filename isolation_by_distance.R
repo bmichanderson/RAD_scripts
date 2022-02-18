@@ -24,6 +24,7 @@ help <- function(help_message) {
 		cat("\t-l\tThe localities of each unit in the matrix, tab delimited as sample_ID (identically labelled) lat lon\n")
 		cat("\t-m\tFlag to run a Mantel test [default do not]\n")
 		cat("\t-r\tFlag to run a linear regression on transformed data [default do not]\n")
+		cat("\t-s\tA file with samples to include (unique names, one per line) [optional]")
 	} else {
 		cat(help_message)
 	}
@@ -61,6 +62,9 @@ if (length(args) == 0) {
 		} else if (args[index] == "-r") {
 			run_regression <- TRUE
 			cat("Will run a linear regression\n")
+		} else if (args[index] == "-s") {
+			samples_present <- TRUE
+			sample_file <- args[index + 1]
 		} else {
 			catch_args[i] <- args[index]
 			i <- i + 1
@@ -72,9 +76,13 @@ if (any(c(! dist_present, ! loc_present))) {
 }
 
 
-# read in the data
+# read in the data; filter the distance matrix to only keep samples if specified
 dist_mat <- read.csv(dist_file, sep = " ", header = TRUE)
 loc_table <- read.table(loc_file, sep = "\t", header = FALSE)
+if (samples_present) {
+	sample_table <- read.table(sample_file, header = FALSE)
+	dist_mat <- dist_mat[rownames(dist_mat) %in% sample_table[, 1], colnames(dist_mat) %in% sample_table[, 1]]
+}
 
 
 # check that the items in the dist_mat have entries in the loc_table
@@ -143,17 +151,18 @@ if (run_regression) {
 	pvalue <- summary(lmodel)$coefficients[2, 4]
 
 	# start making a pdf
-	pdf(paste0(out_pref, "_IBD.pdf"), width = 10, height = 10)
+	pdf(paste0(out_pref, "_IBD.pdf"), width = 7, height = 7)
 
 	# plot the distances by geographic distance with the regression line
+	par(mar = c(5.1, 6.1, 5.1, 2.1), cex.lab = 2)
 	xvar <- geo_mat[lower.tri(geo_mat, diag = FALSE)]
 	yvar <- dist_mat[lower.tri(dist_mat, diag = FALSE)]
 	plot(x = xvar, y = yvar, xlab = "Geographic distance (km)",
-		ylab = "Distance metric")
+		ylab = "Fst", cex.axis = 1.5, pch = 19)
 	abline(lmodel)
 	legend_text <- paste0("Rsquared = ", format(round(adjrsquared, 2), nsmall = 2),
 				"\np = ", format(pvalue, digits = 2))
-	legend("topleft", legend = legend_text, bty = "n")
+	legend("topleft", legend = legend_text, bty = "n", cex = 1.5)
 
 	# if running with Fst, then want to do another regression with log geo dist
 	lmodel <- lm(alter_dist_mat[lower.tri(dist_mat, diag = FALSE)] ~
@@ -166,11 +175,11 @@ if (run_regression) {
 	xvar <- log_geo_mat[lower.tri(geo_mat, diag = FALSE)]
 	yvar <- alter_dist_mat[lower.tri(dist_mat, diag = FALSE)]
 	plot(x = xvar, y = yvar, xlab = "Geographic distance (ln(km))",
-		ylab = "Fst/(1 - Fst)")
+		ylab = "Fst/(1 - Fst)", cex.axis = 1.5, pch = 19)
 	abline(lmodel)
 	legend_text <- paste0("Rsquared = ", format(round(adjrsquared, 2), nsmall = 2),
 				"\np = ", format(pvalue, digits = 2))
-	legend("topleft", legend = legend_text, bty = "n")
+	legend("topleft", legend = legend_text, bty = "n", cex = 1.5)
 
 	# stop the pdf
 	invisible(dev.off())
