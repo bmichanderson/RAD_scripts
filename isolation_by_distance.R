@@ -147,8 +147,8 @@ if (run_regression) {
 	lmodel <- lm(dist_mat[lower.tri(dist_mat, diag = FALSE)] ~
 				geo_mat[lower.tri(geo_mat, diag = FALSE)])
 	rsquared <- summary(lmodel)$r.squared
-	adjrsquared <- summary(lmodel)$adj.r.squared
-	pvalue <- summary(lmodel)$coefficients[2, 4]
+	adjrsquared <- format(round(summary(lmodel)$adj.r.squared, 2), nsmall = 2)
+	pvalue <- format(summary(lmodel)$coefficients[2, 4], digits = 2)
 
 	# start making a pdf
 	pdf(paste0(out_pref, "_IBD.pdf"), width = 7, height = 7)
@@ -158,28 +158,26 @@ if (run_regression) {
 	xvar <- geo_mat[lower.tri(geo_mat, diag = FALSE)]
 	yvar <- dist_mat[lower.tri(dist_mat, diag = FALSE)]
 	plot(x = xvar, y = yvar, xlab = "Geographic distance (km)",
-		ylab = "Fst", cex.axis = 1.5, pch = 19)
+		ylab = expression("F"[ST]), cex.axis = 1.5, pch = 19)
 	abline(lmodel)
-	legend_text <- paste0("Rsquared = ", format(round(adjrsquared, 2), nsmall = 2),
-				"\np = ", format(pvalue, digits = 2))
-	legend("topleft", legend = legend_text, bty = "n", cex = 1.5)
+	ltext <- bquote(atop(R^2 ~ "=" ~ .(adjrsquared), "P =" ~ .(pvalue)))
+	legend("topleft", legend = ltext, bty = "n", cex = 1.5, xjust = 0)
 
 	# if running with Fst, then want to do another regression with log geo dist
 	lmodel <- lm(alter_dist_mat[lower.tri(dist_mat, diag = FALSE)] ~
 				log_geo_mat[lower.tri(geo_mat, diag = FALSE)])
 	rsquared <- summary(lmodel)$r.squared
-	adjrsquared <- summary(lmodel)$adj.r.squared
-	pvalue <- summary(lmodel)$coefficients[2, 4]
+	adjrsquared <- format(round(summary(lmodel)$adj.r.squared, 2), nsmall = 2)
+	pvalue <- format(summary(lmodel)$coefficients[2, 4], digits = 2)
 
 	# plot the altered distances by log geographic distance with the regression line
 	xvar <- log_geo_mat[lower.tri(geo_mat, diag = FALSE)]
 	yvar <- alter_dist_mat[lower.tri(dist_mat, diag = FALSE)]
 	plot(x = xvar, y = yvar, xlab = "Geographic distance (ln(km))",
-		ylab = "Fst/(1 - Fst)", cex.axis = 1.5, pch = 19)
+		ylab = expression("F"[ST] * "/(1 - F"[ST] * ")"), cex.axis = 1.5, pch = 19)
 	abline(lmodel)
-	legend_text <- paste0("Rsquared = ", format(round(adjrsquared, 2), nsmall = 2),
-				"\np = ", format(pvalue, digits = 2))
-	legend("topleft", legend = legend_text, bty = "n", cex = 1.5)
+	ltext <- bquote(atop(R^2 ~ "=" ~ .(adjrsquared), "P =" ~ .(pvalue)))
+	legend("topleft", legend = ltext, bty = "n", cex = 1.5, xjust = 0)
 
 	# stop the pdf
 	invisible(dev.off())
