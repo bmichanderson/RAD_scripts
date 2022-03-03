@@ -219,7 +219,7 @@ if (run_fst) {
 	par(mar = c(5, 4, 4, 5) + 0.1)
 	# heatmap
 	image(myfsts, col = c("#FFFFFF", hcl.colors(n = 100, palette = "greens", rev = TRUE)),
-			axes = FALSE, main = "Pairwise Fst", useRaster = TRUE)
+			axes = FALSE, main = expression("Pairwise F"[ST]), useRaster = TRUE)
 	axis(1, at = seq(0, 1, length.out = ncol(myfsts)),
 		labels = colnames(myfsts), las = 2, lwd.ticks = 0)
 	axis(4, at = seq(0, 1, length.out = ncol(myfsts)),
