@@ -126,7 +126,12 @@ for (index in seq_len(nrow(dist_mat) - 1)) {
 
 
 # store the geo_mat as log-transformed as well
-log_geo_mat <- log(geo_mat)
+# if there are zero values, then there will be a problem, so do a log(x+1) transformation
+if (sum(geo_mat == 0, na.rm = TRUE) > 0) {
+	log_geo_mat <- log(geo_mat + 1)
+} else {
+	log_geo_mat <- log(geo_mat)
+}
 
 
 # if the distances are Fst, then make a correction for fitting to the log geo
