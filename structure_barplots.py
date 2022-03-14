@@ -3,6 +3,7 @@
 ##########################
 # Author: B. Anderson
 # Date: Nov 2021
+# Modified: Mar 2022
 # Description: create barplots from Q matrices from Structure-like runs and output from CLUMPAK
 ##########################
 
@@ -15,21 +16,35 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 
-# set colours to be used (these will need to be adjusted)
+# set colours to be used (these can be adjusted)
 draw_colours = [
-    'forestgreen',      # 22 8B 22 / 34 139 34
-    'darkslateblue',    # 48 3D 8B / 72 61 139
-    'lightskyblue',     # 87 CE FA / 135 206 250
-    'mediumorchid',     # BA 55 D3 / 186 85 211
-	'aquamarine',		# 7F FF D4 / 127 255 212
-	'darkorange',       # FF 8C 00 / 255 140 0
-	'peru',				# CD 85 3F / 80 52 25
-	'tomato',			# FF 63 47 / 100 39 28
-	'khaki',			# F0 E6 8C / 94 90 55
-	'deeppink',			# FF 14 93 / 100 8 58
-	'slategrey',		# 70 80 90 / 44 50 56
-    'lawngreen',        # 7C FC 00 / 124 252 0
-	'steelblue',		# 46 82 B4 / 70	130	180
+    '#228b22', 	# forestgreen
+    '#483d8b', 	# darkslateblue
+    '#87cefa',	# lightskyblue
+    '#ba55d3',	# mediumorchid
+	'#7fffd4',	# aquamarine
+	'#ff8c00',	# darkorange
+	'#cd853f',	# peru
+	'#ff6347',	# tomato
+	'#f0e68c',	# khaki
+	'#ff1493',	# deeppink
+	'#708090',	# slategrey
+    '#7cfc00',	# lawngreen
+	'#4682b4',	# steelblue
+]
+
+
+# set colours to greyscale for neutral plotting (could comment out)
+draw_colours = [
+	'1',
+	'0',
+	'0.5',
+	'0.75',
+	'0.25',
+	'0.88',
+	'0.62',
+	'0.38',
+	'0.12',
 ]
 
 
@@ -80,6 +95,9 @@ for K in range(num_apops):
 plot_df = sample_df.sort_values(['Pop', 'Sample'])
 
 
+# NOTE: The next K sorting bit is unnecessary if using output from CLUMPAK
+# Otherwise, you may have to manually order columns in the q files for consistency
+
 # sort the K columns to consistently colour
 # while the columns aren't sorted yet
 # for pop in pops
@@ -87,21 +105,21 @@ plot_df = sample_df.sort_values(['Pop', 'Sample'])
 #		select that column as next in the sort order if not already there
 # NOTE: it may still not be sorted (pop not majority in any first ind)
 # if so, compare column max values, and continue until all assigned
-K = 1
-sort_order = []
-while K <= num_apops:
-	for pop in set(plot_df['Pop']):
-		df1 = plot_df[plot_df['Pop'] == pop]
-		apop = df1[df1.columns[2:]].idxmax(axis = 1).iloc[0]
-		if apop not in sort_order:
-			sort_order.append(apop)
-			K = K + 1
-	maxs = plot_df.iloc[:, 2:].max().sort_values(ascending = False)
-	for apop in list(maxs.index):
-		if apop not in sort_order:
-			sort_order.append(apop)
-			K = K + 1
-plot_df = plot_df[['Sample', 'Pop'] + sort_order]
+#K = 1
+#sort_order = []
+#while K <= num_apops:
+#	for pop in set(plot_df['Pop']):
+#		df1 = plot_df[plot_df['Pop'] == pop]
+#		apop = df1[df1.columns[2:]].idxmax(axis = 1).iloc[0]
+#		if apop not in sort_order:
+#			sort_order.append(apop)
+#			K = K + 1
+#	maxs = plot_df.iloc[:, 2:].max().sort_values(ascending = False)
+#	for apop in list(maxs.index):
+#		if apop not in sort_order:
+#			sort_order.append(apop)
+#			K = K + 1
+#plot_df = plot_df[['Sample', 'Pop'] + sort_order]
 
 
 # create the barplot
@@ -114,4 +132,5 @@ for spine in ax.spines:
     ax.spines[spine].set_visible(False)
 plt.tick_params(axis = 'y', left = False, labelleft = False)
 plt.tick_params(axis = 'x', bottom = False)
-plt.savefig(out_pre + '.pdf', bbox_inches = 'tight')
+plt.savefig(out_pre + '.svg', bbox_inches = 'tight', format = 'svg')
+#plt.savefig(out_pre + '.pdf', bbox_inches = 'tight')
