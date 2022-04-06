@@ -3,6 +3,7 @@
 ##########################
 # Author: B. Anderson
 # Date: Nov 2021
+# Modified: Mar 2022 (report stats; corrected for ipyrad behaviour)
 # Description: capture and plot read depth information from a VCF file (VCF 4.0)
 ##########################
 
@@ -63,7 +64,9 @@ with open(vcf_file, 'r') as vcf:
 				'''	The format is GT:DP:CATG, so 0/0:85:0,85,0,0 for a homozygous AA with 85 depth
 					We want to grab the depth (DP)
 				'''
-				depths.append(int(call.split(':')[1]))
+				gt = call.split(':')[0].split('/')
+				if gt != ['.', '.']:		# if not an N (shouldn't be needed, but currently is)
+					depths.append(int(call.split(':')[1]))
 			snps.append(depths)
 			count_snps = count_snps + 1
 	print('Read in a VCF file with ' + str(len(sample_labels)) + ' samples and ' + str(count_snps) + ' SNP loci')
@@ -98,3 +101,9 @@ ax2.set_ylabel('Sites')
 ax2.set_xlabel('Depth')
 ax2.set_xlim(0, use_max(maxs) + 0.01 * use_max(maxs))
 plt.savefig(out_pre + '_depth.pdf')
+
+
+# report statistics
+print('Overall mean depth: ' + str(statistics.mean(means)))
+print('Minimum mean depth: ' + str(min(means)))
+print('Maximum mean depth: ' + str(max(means)))
