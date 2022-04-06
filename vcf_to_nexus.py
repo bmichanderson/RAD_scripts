@@ -3,6 +3,7 @@
 ##########################
 # Author: B. Anderson
 # Date: Oct 2021
+# Modified: April 2022
 # Description: convert a VCF file (VCF 4.0) to a Nexus file, for SplitsTree or SNAPP/ER
 ##########################
 
@@ -12,8 +13,9 @@ import argparse
 import os
 import random
 
+
 # instantiate the parser
-parser = argparse.ArgumentParser(description = 'A script to convert a VCF file to a Nexus input format required by SplitsTree or SNAPP;' +
+parser = argparse.ArgumentParser(description = 'A script to convert a VCF file to a Nexus input format required by SplitsTree or SNAPP/ER;' +
 						' it is up to the user to ensure the VCF has the SNPs of interest (e.g. biallelic, one per locus)')
 
 
@@ -91,7 +93,7 @@ for genotypes in snps:
 if count_mono > 0:
 	new_snps = [snps[i] for i in keep_indices]
 	snps = new_snps
-	print('Dropped ' + str(count_mono) + ' monomorphic SNPs and retained ' + str(len(snps)) + ' loci after filtering for monomorphic')
+	print('Dropped ' + str(count_mono) + ' monomorphic SNPs and retained ' + str(len(snps)))
 
 
 # randomly downsample the SNP loci to the desired number
@@ -99,7 +101,7 @@ if random_down:
 	if len(snps) > random_down:
 		new_snps = random.sample(snps, random_down)
 		snps = new_snps
-		print('Randomly downsampled to ' + str(random_down) + ' SNP loci')
+		print('Randomly downsampled to ' + str(random_down) + ' SNPs')
 
 
 # create the output character lines to write to the Nexus file
@@ -129,28 +131,34 @@ if out_format == 'snapp':
 	missing = '?'
 	symbols = '012'
 	num_chars = len(snps)
+	data_block = ('BEGIN DATA;\n\tDIMENSIONS NTAX=' + str(len(sample_labels)) +
+				' NCHAR=' + str(num_chars) + ';\n\t' +
+				'FORMAT\n\t\tDATATYPE=' + datatype + '\n\t\tMISSING=' + missing + '\n\t\t' +
+				'SYMBOLS=\"' + symbols + '\";\n\tMATRIX\n')
 elif out_format == 'splits':
 	datatype = 'STANDARD'
 	missing = '?'
 	symbols = '01'
 	num_chars = len(snps) * 2
-
+	data_block = ('BEGIN TAXA;\n\tDIMENSIONS NTAX=' + str(len(sample_labels)) + ';\n\t' +
+				'TAXLABELS ' + ' '.join(sample_labels) + ';\nEND;\n' +
+				'BEGIN CHARACTERS;\n\tDIMENSIONS NCHAR=' + str(num_chars) + ';\n\t' +
+				'FORMAT\n\t\tDATATYPE=' + datatype + '\n\t\tMISSING=' + missing + '\n\t\t' +
+				'LABELS=NO\n\t\tSYMBOLS=\"' + symbols + '\";\n\tMATRIX\n')
 
 # create the Nexus file
 with open(os.path.basename(vcf_file) + '.nex', 'w') as outfile:
 	outfile.write('#NEXUS\n')
-	taxa_block = ('BEGIN TAXA;\n\tDIMENSIONS NTAX=' + str(len(sample_labels)) + ';\n\t' +
-				'TAXLABELS ' + ' '.join(sample_labels) + ';\nEND;\n')
-	char_block = ('BEGIN CHARACTERS;\n\tDIMENSIONS NCHAR=' + str(num_chars) + ';\n\t' +
-				'FORMAT\n\t\tDATATYPE=' + datatype + '\n\t\tMISSING=' + missing + '\n\t\t' +
-				'LABELS=NO\n\t\tSYMBOLS=\"' + symbols + '\";\n\tMATRIX\n')
-	outfile.write(taxa_block)
-	outfile.write(char_block)
-	for line_out in lines_out:
-		outfile.write('\t\t\t' + line_out + '\n')
+	outfile.write(data_block)
+	if out_format == 'snapp':
+		for index, line_out in enumerate(lines_out):
+			outfile.write('\t\t\t' + sample_labels[index] + '\t' + line_out + '\n')	
+	elif out_format == 'splits':
+		for line_out in lines_out:
+			outfile.write('\t\t\t' + line_out + '\n')
 	outfile.write('\t;\nEND;\n')
 
 
 # report completion
-print('Converted a VCF file with ' + str(len(sample_labels)) + ' samples and ' + str(count_snps) + ' SNP loci to Nexus format with ' +
+print('Converted a VCF file with ' + str(len(sample_labels)) + ' samples and ' + str(count_snps) + ' SNPs to Nexus format with ' +
 	str(len(lines_out)) + ' samples and ' + str(num_chars) + ' characters')
