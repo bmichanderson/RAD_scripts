@@ -34,17 +34,17 @@ draw_colours = [
 ]
 
 
-# set colours to greyscale for neutral plotting (could comment out)
+# set colours to greyscale (plus light colours) for neutral plotting (could comment out)
 draw_colours = [
 	'1',
 	'0',
 	'0.5',
 	'0.75',
 	'0.25',
-	'0.88',
-	'0.62',
-	'0.38',
-	'0.12',
+	'#b5ccff',
+	'#b5ffb5',
+	'#ffffb5',
+	'#ffb5ff',
 ]
 
 
