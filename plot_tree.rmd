@@ -3,20 +3,22 @@ title: "Plot a phylogenetic tree"
 output: html_document
 ---
 
-This document describes the process of plotting a phylogenetic tree.
-Initially, I am having trouble reading the complex NEXUS format from IQTree.
-The function `read.beast()` from package `treeio` associated with package `ggtree` fails.
-To get around this, I have written a short python script `concord_to_newick.py`.
-Pass the complicated Nexus tree to that script, then use the output for plotting.
+This document describes the process of plotting a phylogenetic tree  
+Initially, I was having trouble reading the complex NEXUS format from IQ-TREE  
+The function `read.beast()` from package `treeio` associated with package `ggtree` fails  
 
-The input tree should be in Newick format. That format can include node labels.
+To get around this, I have written a short python script `concord_to_newick.py`  
+Pass the complicated Nexus tree to that script, then use the output for plotting with this script  
 
-Load libraries and set your working directory, which has the tree file in it (and other files of interest, e.g. taxon sets)
-The outgroup file has a single tip label per line.
-The clade file has a search term per line (or multiple, tab separated) for taxa in a clade for collapsing.
+The input tree should be in Newick format and can include node labels  
+These commands with the files expected to be in the current working directory (set with `setwd("")`)  
+
+The outgroup file has a single tip label per line  
+The clade file has a search term per line (or multiple, tab separated) for taxa in a clade for collapsing  
+
+Load libraries  
 ```{r}
 suppressMessages(library(ape))
-setwd("~/PROJECT/GAP_Conservation/Isopogon/full/svd_Isopogon/phylo_ind/")
 treefile <- "bootcon_mod.tre"
 outgroup_file <- "outgroup.txt"
 clade_file <- "clades.txt"
@@ -65,17 +67,17 @@ if (file.exists(outgroup_file)) {
 }
 ```
 
-Start a graphics device if wanting to output (svg if collapsing nodes)
+Start a graphics device (svg if collapsing nodes)
 ```{r}
 svg("test_out.svg", width = 7, height = 21)
 ```
 
-Or pdf if just wanting a quick plot
+**OR** pdf for preview
 ```{r}
 pdf("test_out.pdf", width = 7, height = 21)
 ```
 
-If desired, plot the tree as a cladogram
+Preview option 1: plot the tree as a cladogram
 ```{r}
 plot.phylo(ladderize(tree, right = FALSE),
 			no.margin = TRUE,
@@ -84,7 +86,7 @@ plot.phylo(ladderize(tree, right = FALSE),
 			font = 1)
 ```
 
-Or plot as a tree with edge lengths
+Preview option 2: plot the tree with edge lengths
 ```{r}
 plot.phylo(ladderize(tree, right = FALSE),
 			no.margin = TRUE,
@@ -92,21 +94,20 @@ plot.phylo(ladderize(tree, right = FALSE),
 add.scale.bar(x = 0.1, y = -1, font = 1)
 ```
 
-Stop creating the graphic, if started earlier and not wanting to collapse nodes
+Stop creating the graphic, if only for the pdf preview
 ```{r}
 invisible(dev.off())
 ```
 
 
-Collapse clades into triangles
-Perhaps modify N. Cusimano's function (https://www.en.sysbot.bio.lmu.de/people/employees/cusimano/use_r/mapping.R)?
-See also: https://stackoverflow.com/a/34405198
-We can use the quick plot above to decide which clades we want to collapse
+Collapse clades into triangles  
+Perhaps modify N. Cusimano's function (https://www.en.sysbot.bio.lmu.de/people/employees/cusimano/use_r/mapping.R)?  
+See also: https://stackoverflow.com/a/34405198  
 
-First, determine the formatting for the plot and plot it (set up coordinates).
-Change the function to the way you want the tree to look.
+First, determine the formatting for the plot and plot it (set up coordinates)  
+Define a function to display the tree that will have collapsed clades  
 
-For a cladogram:
+Cladogram:
 ```{r}
 collapse_tree <- function(phylo, ...) {
 	plot.phylo(ladderize(phylo, right = FALSE),
@@ -118,7 +119,7 @@ collapse_tree <- function(phylo, ...) {
 }
 ```
 
-Or for a phylogram:
+**OR** Phylogram (with meaningful branch lengths):
 ```{r}
 collapse_tree <- function(phylo, ...) {
 	plot.phylo(ladderize(phylo, right = FALSE),
@@ -129,9 +130,15 @@ collapse_tree <- function(phylo, ...) {
 ```
 
 
-Now run the plotting and collapsing of clades
+Now run the plotting and collapsing of clades  
+**NOTE:** The `clades.txt` file needs to be present to run this  
 ```{r}
-# plot the tree to get a coordinate system (change to the format desired)
+# check if there are clades present
+if (! clades_present) {
+	stop(print("There needs to be a clades file specified to collapse clades\n"), call. = FALSE)
+}
+
+# plot the tree to get a coordinate system
 collapse_tree(tree)
 
 # determine triangle coordinates and edges and tips to drop for clades
@@ -194,9 +201,11 @@ for (index in seq_len(length(clade_lines))) {
 
 # now plot the tree with the edges and tips of interest removed
 mytree <- tree
+
 # set tip labels to be dropped to NA
 all_drops <- unlist(tips_drop)
 mytree$tip.label[match(all_drops, mytree$tip.label)] <- NA
+
 # determine the edges in the original tree and their order in the ladderized one
 # designate the edges as unique combos of column values in the tree$edge table
 all_edges <- unlist(edges_drop)
@@ -204,6 +213,7 @@ edge_combos <- tree$edge[all_edges, ]	# the edge order is specific to the unalte
 edges_char <- paste0(as.character(edge_combos[, 1]), "_", as.character(edge_combos[, 2]))
 new_edges_char <- paste0(as.character(lastplot$edge[, 1]), "_",
 						as.character(lastplot$edge[, 2]))
+
 # set the specific edges to have width -1
 edge_widths <- rep(1, nrow(mytree$edge))
 edge_widths[new_edges_char %in% edges_char] <- -1
@@ -225,18 +235,18 @@ for (index in seq_len(length(labels))) {
 }
 ```
 
-Plot node labels on edges
+If desired, plot node labels (e.g. bootstrap support) on edges
 ```{r}
 drawSupportOnEdges(tree$node.label, adj = c(0.5, -0.5), frame = "none")
 ```
 
-Plot node labels on nodes
+Another option is to plot node labels on nodes
 ```{r}
 nodelabels(tree$node.label, adj = c(-0.05, 0.5), frame = "none")
 ```
 
-If using concordance factors as labels, capture as a dataframe
-This works if captured with my `concord_to_newick.py` script: "sCF/sDF1/sDF2"
+If using site concordance factors, capture them as a dataframe  
+(This works if captured with my `concord_to_newick.py` script: "sCF/sDF1/sDF2")
 ```{r}
 concord_df <- data.frame(matrix(ncol = 3, nrow = tree$Nnode))
 index <- 1
@@ -252,19 +262,19 @@ for (label in tree$node.label) {
 concord_df <- as.data.frame(lapply(concord_df, as.numeric))
 ```
 
-Plot concordance as a pie chart on nodes
+If desired, plot site concordance factors as pie charts on nodes
 ```{r}
 nodelabels(pie = concord_df,
-			piecol = c("white", "grey", "black"),
-			cex = 1)
+	piecol = c("white", "grey", "black"),
+	cex = 1)
 ```
 
-Add a scale bar if applicable
+If the collapsed clades tree is a phylogram, add a scale bar
 ```{r}
 add.scale.bar(x = 0.1, y = -1, font = 1)
 ```
 
-Stop creating the graphic, if started earlier
+Stop creating the graphic
 ```{r}
 invisible(dev.off())
 ```
