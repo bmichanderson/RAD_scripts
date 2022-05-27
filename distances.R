@@ -54,7 +54,7 @@ help <- function(help_message) {
 		cat("\t-d\tThe distance method: (G/1)GENPOFAD [default], (E/2)Euclidean, (M/3)MATCHSTATES\n")
 		cat("\t-o\tThe output file name prefix [default output]\n")
 		cat("\t-v\tThe VCF file to be analysed\n")
-		cat("\t-s\tSamples and populations as tab-delimited sample IDs and pops, one per line\n")
+		cat("\t-s\tSamples and populations as tab-delimited sample IDs and pops, one per line [optional]\n")
 	} else {
 		cat(help_message)
 	}
@@ -118,8 +118,8 @@ if (length(args) == 0) {
 		}
 	}
 }
-if (any(c(! vcf_present, ! samples_present))) {
-	stop(help("Missing argument for vcf file and/or samples file!\n"), call. = FALSE)
+if (! vcf_present) {
+	stop(help("Missing argument for vcf file!\n"), call. = FALSE)
 }
 
 
@@ -184,7 +184,12 @@ close(outfile)
 
 
 # Assign colours for plotting
-populations <- sample_table$V2[match(individuals, sample_table$V1)]
+if (samples_present) {
+	populations <- sample_table$V2[match(individuals, sample_table$V1)]
+} else {
+	populations <- individuals
+}
+
 indiv_colours <- rep("black", length(populations))
 pop_colours <- rep("black", length(unique(populations)))
 ind <- 1
