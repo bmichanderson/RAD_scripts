@@ -103,7 +103,7 @@ for index, sample_label in enumerate(sample_labels):
 		else:
 			sequence.append(amb_dict[genotype[0] + genotype[1]])
 	new_sequence = Seq(''.join(sequence))
-	new_record = SeqRecord(new_sequence, id = sample_label, description = 'SNPs')
+	new_record = SeqRecord(new_sequence, id = sample_label, description = sample_label)
 	new_records.append(new_record)
 
 
