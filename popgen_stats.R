@@ -2,15 +2,16 @@
 ##########
 # Author: Ben Anderson with ideas from Rachel Binks
 # Date: Dec 2021
+# Modified: May 2022
 # Description: calculate various popgen stats for a VCF file
 ##########
 
 
 # load required libraries
-suppressMessages(library(adegenet))
 suppressMessages(library(vcfR))
-suppressMessages(library(StAMPP))
+suppressMessages(library(adegenet))
 suppressMessages(library(hierfstat))
+suppressMessages(library(StAMPP))
 
 
 # Define functions
@@ -19,43 +20,38 @@ suppressMessages(library(hierfstat))
 help <- function(help_message) {
 	if (missing(help_message)) {
 		cat("A script to calculate various popgen stats from an input VCF file\n")
-		cat("Usage: Rscript popgen_stats.R -o out_pref -v vcf_file -s samples_file\n")
+		cat("Usage: Rscript popgen_stats.R -o out_pref -v vcf_file -s samples_file -t [run Fst calculations]\n")
 		cat("Options:\n")
 		cat("\t-o\tThe output file name prefix [default output]\n")
 		cat("\t-v\tThe VCF file to be analysed\n")
 		cat("\t-s\tSamples and populations as tab-delimited sample IDs and pops, one per line\n")
-		cat("\t-t\tRun Fst calculations (default: do not)\n")
+		cat("\t-t\tRun pairwise Fst calculations between populations (default: do not)\n")
 	} else {
 		cat(help_message)
 	}
 }
 
 
-# a function to calculate standard error
-# see: https://stackoverflow.com/questions/2676554/in-r-how-to-find-the-standard-error-of-the-mean
-# and: https://www.rdocumentation.org/packages/plotrix/versions/3.8-2/topics/std.error
-se <- function(x) {
+## a function to calculate standard error
+## see: https://stackoverflow.com/questions/2676554/in-r-how-to-find-the-standard-error-of-the-mean
+## and: https://www.rdocumentation.org/packages/plotrix/versions/3.8-2/topics/std.error
+stde <- function(x) {
 	sqrt(var(x, na.rm = TRUE) / sum(!is.na(x)))
 }
 
 
-# a function to add an error bar
-# from https://www.r-graph-gallery.com/4-barplot-with-error-bar.html
-errorbar <- function(x, y, upper, lower = upper, length = 0.1, ...) {
-	arrows(x, y + upper, x, y - lower, angle = 90, code = 3, length = length, ...)
+## a function to plot a barplot with error bars
+## see: https://www.r-graph-gallery.com/4-barplot-with-error-bar.html
+mybarplot <- function(data_val, data_se, names, main) {
+	myplot <- barplot(data_val, names = names, las = 2,
+		main = main,
+		ylim = c(min(c(0, 1.2 * (data_val - data_se * 2))), 1.2 * max(data_val + data_se * 2)))
+	arrows(myplot, y0 = data_val + data_se * 2, y1 = data_val - data_se * 2,
+		angle = 90, code = 3, length = 0.1)
 }
 
 
-# a function to plot a barplot with error bars
-mybarplot <- function(vec_val, vec_se, names, ...) {
-	myplot <- barplot(vec_val, names = names, las = 2, ...)
-	errorbar(myplot, vec_val, vec_se)
-}
-
-
-# Read in and format the data
-
-# parse the command line
+# Parse the command line
 args <- commandArgs(trailingOnly = TRUE)
 
 if (length(args) == 0) {
@@ -98,6 +94,12 @@ cat("Read in a VCF with", ncol(vcf@gt) - 1, "samples,",
 	length(unique(vcf@fix[, 1])), "loci and", nrow(vcf@fix), "SNPs\n")
 
 
+# check that the samples in the VCF are in the table
+for (indiv in colnames(vcf@gt)[2: ncol(vcf@gt)]) {
+	if (! indiv %in% sample_table$V1) {
+		stop(help("Sample missing from samples file! Stopping\n"), call. = FALSE)
+	}
+}
 
 # calculate amount of missing data, and average per pop
 gt <- extract.gt(vcf, element = "GT")
@@ -110,16 +112,17 @@ sample_size <- table(names(missing))
 
 
 # convert the VCF into a hierfstat dataframe with pop and genotype
-geni <- vcfR2genind(vcf)
+geni <- vcfR2genind(vcf, return.alleles = TRUE)
 populations <- sample_table$V2[match(rownames(geni@tab), sample_table$V1)]
 geni@pop <- as.factor(populations)
 my_hfst <- genind2hierfstat(geni)
 
 
 # calculate basic stats and create a summary dataframe
-print("Calculating and plotting basic popgen stats")
+cat("Calculating and plotting basic popgen stats\n")
 bstats <- basic.stats(my_hfst)
-# if there was only one pop, hierfst adds a dummy pop, which breaks my code, so only keep the first column
+# if there was only one pop, hierfst adds a dummy pop,
+# which breaks my code, so only keep the first column
 if (length(unique(populations)) == 1) {
 	bstats$Ho <- data.frame(bstats$Ho[, 1])
 	bstats$Hs <- data.frame(bstats$Hs[, 1])
@@ -127,120 +130,87 @@ if (length(unique(populations)) == 1) {
 	colnames(bstats$Ho) <- populations[1]
 }
 summary <- as.data.frame(matrix(ncol = 8, nrow = length(unique(populations))))
-colnames(summary) <- c("n", "miss", "ho", "hose", "hs", "hsse", "fis", "fisse")
+colnames(summary) <- c("Samples", "PercentMissing", "Ho", "Ho_SE", "Hs",
+	"Hs_SE", "Fis", "Fis_SE")
 rownames(summary) <- colnames(bstats$Ho)
 
 
 # populate the dataframe with values
-summary$n <- sample_size
-summary$miss <- meanmiss
-summary$ho <- apply(bstats$Ho, 2, function(x) mean(x, na.rm = TRUE))
-summary$hose <- apply(bstats$Ho, 2, se)
-summary$hs <- apply(bstats$Hs, 2, function(x) mean(x, na.rm = TRUE))
-summary$hsse <- apply(bstats$Hs, 2, se)
-summary$fis <- apply(bstats$Fis, 2, function(x) mean(x, na.rm = TRUE))
-summary$fisse <- apply(bstats$Fis, 2, se)
+summary[, "Samples"] <- sample_size
+summary[, "PercentMissing"] <- meanmiss
+summary[, "Ho"] <- apply(bstats$Ho, 2, function(x) mean(x, na.rm = TRUE))
+summary[, "Ho_SE"] <- apply(bstats$Ho, 2, stde)
+summary[, "Hs"] <- apply(bstats$Hs, 2, function(x) mean(x, na.rm = TRUE))
+summary[, "Hs_SE"] <- apply(bstats$Hs, 2, stde)
+summary[, "Fis"] <- apply(bstats$Fis, 2, function(x) mean(x, na.rm = TRUE))
+summary[, "Fis_SE"] <- apply(bstats$Fis, 2, stde)
 
 
 # export the table to file
 write.table(summary, file = paste0(out_pref, "_summary.txt"),
-			quote = FALSE, row.names = TRUE)
+	quote = FALSE, row.names = TRUE)
 
 
-# start creating a pdf of plots
+# in the rare event there are NaN values in the summary, change them to zero for plotting
+summary[is.na(summary)] <- 0
+
+
+# Create plots
+# start creating a pdf
 pdf(paste0(out_pref, "_summary.pdf"), width = 10, height = 10)
 
-
 # graph the sample sizes by pop
-barplot(summary$n, las = 2, main = "Sample size", names = rownames(summary))
-
+barplot(summary$Samples, las = 2, main = "Sample size",
+	names = rownames(summary))
 
 # graph the amount of missing data
-barplot(summary$miss, las = 2, main = "Mean missing data",
-		names = rownames(summary))
-
+barplot(summary$PercentMissing, las = 2, main = "Mean percentage missing",
+	names = rownames(summary))
 
 # graph the values by population
-# also, use a confidence interval of +/- 2 * SE
-mybarplot(summary$ho, summary$hose * 2, names = rownames(summary),
-			main = "Ho, observed heterozygosity",
-			ylim = c(0, 1.2 * max(summary$ho + summary$hose * 2)))
-mybarplot(summary$hs, summary$hsse * 2, names = rownames(summary),
-			main = "Hs, estimated gene diversity\n(expected heterozygosity)",
-			ylim = c(0, 1.2 * max(summary$hs + summary$hsse * 2)))
-mybarplot(summary$fis, summary$fisse * 2, names = rownames(summary),
-			main = "Inbreeding coefficient, Fis\n(1 - Ho/Hs)",
-			ylim = c(1.2 * min(c(0, summary$fis - summary$fisse * 2)),
-					1.2 * max(c(0, summary$fis + summary$fisse * 2))))
-
+mybarplot(summary$Ho, summary$Ho_SE, names = rownames(summary),
+	main = "Ho, observed heterozygosity")
+mybarplot(summary$Hs, summary$Hs_SE, names = rownames(summary),
+	main = "Hs, estimated gene diversity\n(expected heterozygosity)")
+mybarplot(summary$Fis, summary$Fis_SE, names = rownames(summary),
+	main = "Inbreeding coefficient Fis\n(1 - Ho / Hs)")
 
 # stop creating the pdf
 invisible(dev.off())
 
 
+# Run Fst calculations if requested
 if (run_fst) {
 	# calculate pairwise Fst
-	print("Calculating and plotting pairwise Fst")
+	cat("Calculating pairwise Fst\n")
 
-
-	# first, convert the vcf to a genlight, then add pop
+	# The faster way is via a genlight and StAMPP
+	# convert the vcf to a genlight, then add pop
+	# NOTE: this will remove sites that are not biallelic
 	genl <- vcfR2genlight(vcf)
 	pop(genl) <- populations
 
-
 	# now use the genlight in StAMPP
 	# this calculates Fst following Weir and Cockerham 1984
-	# if wanting to get confidence intervals, use e.g.
+	# if wanting to get confidence intervals, one could use e.g.
 	# nboots = 100, percent = 95, nclusters = 4
 	fsts <- stamppFst(genl, nboots = 1)
 
+	# export the pairwise Fst values to file
+	write.table(fsts, file = paste0(out_pref, "_StAMPP_Fst.txt"),
+		quote = FALSE, row.names = TRUE)
 
-	# order the resulting pairwise matrix by row
-	# if using the confidence intervals: myfsts <- fsts$Fsts
-	myfsts <- fsts
-	ord <- sort(rownames(myfsts))
-	myfsts[upper.tri(myfsts)] <- t(myfsts)[upper.tri(myfsts)]
-	myfsts <- myfsts[ord, ord]
-	myfsts[upper.tri(myfsts)] <- NA
-	diag(myfsts) <- 0
 
+	# A slower way is using the hierfstat package
+	# this calculates Fst following Weir and Cockerham 1984
+	# since this doesn't convert to genlight, it keeps all sites
+	cat("And more slowly with hierfstat...\n")
+	h_fsts <- pairwise.WCfst(my_hfst)
+
+	# make the resulting square matrix a lower triangle matrix
+	h_fsts[upper.tri(h_fsts)] <- NA
 
 	# export the pairwise Fst values to file
-	write.table(myfsts, file = paste0(out_pref, "_Fst.txt"),
-				quote = FALSE, row.names = TRUE)
-
-
-	# start creating a pdf
-	pdf(paste0(out_pref, "_fst.pdf"), width = 10, height = 10)
-
-
-	# plot a heatmap
-	# for making legend, see https://stackoverflow.com/a/13355440 and https://stackoverflow.com/a/70522655
-	par(mar = c(5, 4, 4, 5) + 0.1)
-	# heatmap
-	image(myfsts, col = c("#FFFFFF", hcl.colors(n = 100, palette = "greens", rev = TRUE)),
-			axes = FALSE, main = expression("Pairwise F"[ST]), useRaster = TRUE)
-	axis(1, at = seq(0, 1, length.out = ncol(myfsts)),
-		labels = colnames(myfsts), las = 2, lwd.ticks = 0)
-	axis(4, at = seq(0, 1, length.out = ncol(myfsts)),
-		labels = colnames(myfsts), las = 2, lwd.ticks = 0)
-	# legend
-	subx <- grconvertX(c(0, 0.2), from = "user", to = "ndc")
-	suby <- grconvertY(c(0.5, 1), from = "user", to = "ndc")
-	op <- par(fig = c(subx, suby),
-			mar = c(1, 1, 1, 0),
-			new = TRUE)
-	legend_colours <- as.raster(c(hcl.colors(n = 100, palette = "greens"), "#FFFFFF"))
-	legend_seq <- seq(0, max(myfsts, na.rm = TRUE), length = 5)
-	legend_labels <- format(round(legend_seq, 2), nsmall = 2)
-	plot(x = c(0, 2), y = c(0, 1), type = "n",
-		axes = FALSE, xlab = "", ylab = "", main = "")
-	axis(side = 4, at = seq(0, 1, length = 5), pos = 1, labels = FALSE,
-		col = 0, col.ticks = 1)
-	mtext(legend_labels, side = 4, line = -0.5, at = seq(0, 1, length = 5), las = 2)
-	rasterImage(legend_colours, xleft = 0, ybottom = 0, xright = 1, ytop = 1)
-	par(op)
-
-	# stop creating the pdf
-	invisible(dev.off())
+	write.table(h_fsts, file = paste0(out_pref, "_hierfstat_Fst.txt"),
+		quote = FALSE, row.names = TRUE)
 }
