@@ -4,22 +4,22 @@ output: html_document
 ---
 
 This document describes the process of plotting a phylogenetic tree  
-Initially, I was having trouble reading the complex NEXUS format from IQ-TREE  
+Initially, I was having trouble reading the complex NEXUS format from IQ-Tree (for concordance factors)  
 The function `read.beast()` from package `treeio` associated with package `ggtree` fails  
 
 To get around this, I have written a short python script `concord_to_newick.py`  
-Pass the complicated Nexus tree to that script, then use the output for plotting with this script  
+Pass the complicated concordance Nexus tree to that script, then use the output for plotting with this script  
 
 The input tree should be in Newick format and can include node labels  
-These commands with the files expected to be in the current working directory (set with `setwd("")`)  
+Files are expected to be in the current working directory (set with `setwd("")`)  
 
 The outgroup file has a single tip label per line  
-The clade file has a search term per line (or multiple, tab separated) for taxa in a clade for collapsing  
+The clade file has a search term per line (or multiple, tab separated) unique for taxa in a clade for collapsing  
 
-Load libraries  
+Load library and read input  
 ```{r}
 suppressMessages(library(ape))
-treefile <- "bootcon_mod.tre"
+treefile <- "qfm.tre"
 outgroup_file <- "outgroup.txt"
 clade_file <- "clades.txt"
 ```
