@@ -19,7 +19,7 @@ The clade file has a search term per line (or multiple, tab separated) unique fo
 Load library and read input  
 ```{r}
 suppressMessages(library(ape))
-treefile <- "qfm.tre"
+treefile <- "phylo.treefile"
 outgroup_file <- "outgroup.txt"
 clade_file <- "clades.txt"
 ```
@@ -69,12 +69,12 @@ if (file.exists(outgroup_file)) {
 
 Start a graphics device (svg if collapsing nodes)
 ```{r}
-svg("test_out.svg", width = 7, height = 21)
+svg("tree_out.svg", width = 11, height = 22)
 ```
 
 **OR** pdf for preview
 ```{r}
-pdf("test_out.pdf", width = 7, height = 21)
+pdf("tree_out.pdf", width = 11, height = 22)
 ```
 
 Preview option 1: plot the tree as a cladogram
@@ -83,24 +83,67 @@ plot.phylo(ladderize(tree, right = FALSE),
 			no.margin = TRUE,
 			use.edge.length = FALSE,
 			node.depth = 2,
-			font = 1)
+			font = 1,
+			edge.width = 3)
 ```
 
 Preview option 2: plot the tree with edge lengths
 ```{r}
 plot.phylo(ladderize(tree, right = FALSE),
 			no.margin = TRUE,
-			font = 1)
-add.scale.bar(x = 0.1, y = -1, font = 1)
+			font = 1,
+			edge.width = 3)
+add.scale.bar(y = -1, font = 1)
 ```
 
-Stop creating the graphic, if only for the pdf preview
+If desired, plot node labels (e.g. bootstrap support) on edges
+```{r}
+drawSupportOnEdges(tree$node.label, adj = c(0.5, -0.5), frame = "none")
+```
+
+If wanting to just plot the preview, stop plotting now 
 ```{r}
 invisible(dev.off())
 ```
 
+One way to proceed is to zoom into the ingroup
+```{r}
+zoom(ladderize(tree, right = FALSE),
+		grep(paste(outgroups, collapse = "|"), tree$tip.label, invert = TRUE),
+		subtree = FALSE,
+		col = "black",
+		no.margin = TRUE,
+		font = 1,
+		edge.width = 3)
+add.scale.bar(y = -1, font = 1, lwd = 3)
+```
 
-Collapse clades into triangles  
+For zooming(!), it is not clear how to adjust the node labels to display support  
+A new plot is made that changes the node numbers to sequential from the order going in  
+This method appears to work  
+```{r}
+# first, determine the edge labels of the tree that is being zoomed into
+old_edges <- ladderize(tree, right = FALSE)$edge
+
+# next, find the node number of the MRCA for the ingroup
+mrca_node <- getMRCA(tree, grep(paste(outgroups, collapse = "|"), tree$tip.label, invert = TRUE))
+
+# the first time that node shows up in the edges matrix will be the start point for the zoomed tree
+index <- grep(mrca_node, old_edges[, 2])
+partner_edges <- old_edges[, 2][(index + 1): length(old_edges[, 2])]
+
+# now take those numbers (numbers < Ntip(tree) are tips) and match node labels
+# this should be the order of node labels in the zoomed tree
+edge_nums <- partner_edges[partner_edges > Ntip(tree)]
+new_node_labels <- tree$node.label[edge_nums - Ntip(tree)]
+
+# plot support on edges
+drawSupportOnEdges(new_node_labels, adj = c(0.5, -0.5), frame = "none")
+invisible(dev.off())
+```
+
+
+Another way to proceed is to collapse clades into triangles  
 Perhaps modify N. Cusimano's function (https://www.en.sysbot.bio.lmu.de/people/employees/cusimano/use_r/mapping.R)?  
 See also: https://stackoverflow.com/a/34405198  
 
@@ -129,6 +172,17 @@ collapse_tree <- function(phylo, ...) {
 }
 ```
 
+**OR** Phylogram, but reducing the impact of long edges (adjust num_edges to fit your tree's long branches)
+```{r}
+num_edges <- 3
+collapse_tree <- function(phylo, ...) {
+	plotBreakLongEdges(ladderize(phylo, right = FALSE),
+				no.margin = TRUE,
+				font = 1,
+				n = num_edges,
+				...)
+}
+```
 
 Now run the plotting and collapsing of clades  
 **NOTE:** The `clades.txt` file needs to be present to run this  
@@ -215,13 +269,13 @@ new_edges_char <- paste0(as.character(lastplot$edge[, 1]), "_",
 						as.character(lastplot$edge[, 2]))
 
 # set the specific edges to have width -1
-edge_widths <- rep(1, nrow(mytree$edge))
+edge_widths <- rep(3, nrow(mytree$edge))
 edge_widths[new_edges_char %in% edges_char] <- -1
 collapse_tree(mytree, edge.width = edge_widths)
 
 # add the triangles
 for (coordset in tri_coords) {
-	polygon(coordset[[1]], coordset[[2]])
+	polygon(coordset[[1]], coordset[[2]], lwd = 3)
 }
 
 # add clade labels
@@ -240,7 +294,7 @@ If desired, plot node labels (e.g. bootstrap support) on edges
 drawSupportOnEdges(tree$node.label, adj = c(0.5, -0.5), frame = "none")
 ```
 
-Another option is to plot node labels on nodes
+**OR** Another option is to plot node labels on nodes
 ```{r}
 nodelabels(tree$node.label, adj = c(-0.05, 0.5), frame = "none")
 ```
@@ -271,7 +325,7 @@ nodelabels(pie = concord_df,
 
 If the collapsed clades tree is a phylogram, add a scale bar
 ```{r}
-add.scale.bar(x = 0.1, y = -1, font = 1)
+add.scale.bar(y = -1, font = 1, lwd = 3)
 ```
 
 Stop creating the graphic
