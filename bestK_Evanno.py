@@ -3,6 +3,7 @@
 ##########################
 # Author: B. Anderson
 # Date: Oct 2021
+# Modified: Aug 2022 (changed font and output file format)
 # Description: compute and visualize likelihood values from multiple structure-like runs to assess best K
 ##########################
 
@@ -14,6 +15,10 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+
+
+# set the font output
+matplotlib.rcParams['font.family'] = 'Arial'
 
 
 # to avoid warnings when creating ragged arrays in np
@@ -28,7 +33,7 @@ parser = argparse.ArgumentParser(description = 'A script to compute and visualiz
 # add arguments to parse
 parser.add_argument('-l', type = str, dest = 'like_file', help = 'The likelihoods file for the K reps (multiple lines per K) in tab delimited form:' + 
 																	'K_value likelihood')
-parser.add_argument('-o', type = str, dest = 'output', help = 'Name of the output pdf without extension [default \"output\"]')
+parser.add_argument('-o', type = str, dest = 'output', help = 'Name of the output SVG without extension [default \"output\"]')
 
 
 # parse the command line
@@ -72,7 +77,7 @@ like_comps.loc[:, 'deltaK'] = like_comps['absLdprime'] / like_comps['std']
 # plot visualizations of log probabilities and deltaK
 fig, (ax1, ax2) = plt.subplots(2, 1, sharex = True, figsize = (7, 9))
 plt.subplots_adjust(hspace = 0.2)
-plt.rcParams['font.size'] = 22
+plt.rcParams['font.size'] = 20
 like_comps.plot(y = 'mean', marker = '.', markersize = 12,
 					title = 'Log Prob of Data L(K)', legend = False,
 					linewidth = 0.75, color = 'steelblue', ax = ax1)
@@ -92,4 +97,4 @@ ax2.set_xticks(like_comps.index)
 ax2.xaxis.set_tick_params(labelsize = 18)
 ax2.yaxis.set_tick_params(labelsize = 18)
 plt.grid()
-plt.savefig(out_pre + '.pdf')
+plt.savefig(out_pre + '.svg')
