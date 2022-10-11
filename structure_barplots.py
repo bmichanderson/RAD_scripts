@@ -28,6 +28,8 @@ parser.add_argument('-p', type = str, dest = 'pops_file', help = 'The population
 					'"sampleID    pop", one per line; samples must be in the same order as in the Q matrix')
 parser.add_argument('-q', type = str, dest = 'Q_file', help = 'The Q matrix file containing the whitespace-delimited assignment proportions ' +
 					'without headers or any line information; i.e. a table with K columns and as many rows as samples')
+parser.add_argument('-s', type = str, dest = 'sorting', help = 'An optional file with the order of samples desired, one per line ' +
+					'with the same designation as in the pops_file')
 
 
 # parse the command line
@@ -39,6 +41,7 @@ out_pre = args.out_pre
 col_file = args.col_file
 pops_file = args.pops_file
 Q_file = args.Q_file
+sorting = args.sorting
 
 if any([not pops_file, not Q_file, not col_file]):
 	parser.print_help(sys.stderr)
@@ -76,8 +79,19 @@ if len(draw_colours) < num_apops:
 	sys.exit(1)
 
 
-# sort by pop
-plot_df = sample_df.sort_values(['Pop', 'Sample'])
+# sort by pop, or if a specific sorting is provided, use that
+if sorting:	
+	sorted_samples = []
+	with open(sorting, 'r') as infile:
+		for line in infile:
+			sorted_samples.append(line.rstrip())
+	current_samples = list(sample_df.Sample)
+	index = []
+	for sample in sorted_samples:
+		index.append(current_samples.index(sample))
+	plot_df = sample_df.loc[index]
+else:
+	plot_df = sample_df.sort_values(['Pop', 'Sample'])
 
 
 # create the barplot
