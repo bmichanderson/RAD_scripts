@@ -5,9 +5,6 @@
 # Description: create a population heatmap based on an input Fst matrix
 ##########
 
-# load required library
-#?
-
 
 # Define functions
 
