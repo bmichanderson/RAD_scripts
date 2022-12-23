@@ -286,7 +286,7 @@ if (vcf_present) {
 		### NOTE: this will remove sites that are not biallelic
 		genl <- vcfR2genlight(vcf)
 		pop(genl) <- populations
-		cat(paste0("The genlight has ", nLoci(genl), " loci\n"))
+		cat(paste0("The genlight has ", nLoc(genl), " loci\n"))
 
 		### now use the genlight in StAMPP
 		### this calculates Fst following Weir and Cockerham 1984
