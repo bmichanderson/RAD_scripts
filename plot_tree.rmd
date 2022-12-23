@@ -318,6 +318,8 @@ concord_df <- as.data.frame(lapply(concord_df, as.numeric))
 
 If desired, plot site concordance factors as pie charts on nodes
 ```{r}
+# to catch if there are any all 0
+concord_df[which(concord_df[, 1] == 0 & concord_df[, 2] == 0 & concord_df[, 3] == 0), ] <- c(NA, NA, NA)
 nodelabels(pie = concord_df,
 	piecol = c("white", "grey", "black"),
 	cex = 1)
