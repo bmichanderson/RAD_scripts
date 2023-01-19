@@ -18,7 +18,6 @@ parser = argparse.ArgumentParser(description = 'A script to collate clones from 
 # add arguments to parse
 parser.add_argument(type = str, dest = 'comp_file', help = 'The comparisons file with three columns (no header): ' + \
 	'individual 1 (string), individual 2 (string), distance (float)')
-parser.add_argument('-o', type = str, dest = 'outpre', help = 'The prefix for output files (default: output)')
 parser.add_argument('-t', type = float, dest = 'thresh', help = 'The threshold of difference below which to consider the comparison clonal (default: 0.02)')
 
 
@@ -29,7 +28,6 @@ if len(sys.argv[1:]) == 0:		# if there are no arguments
 
 args = parser.parse_args()
 comp_file = args.comp_file
-outpre = args.outpre
 thresh = args.thresh
 
 if not comp_file:
@@ -38,9 +36,6 @@ if not comp_file:
 
 if not thresh:
 	thresh = 0.02
-
-if not outpre:
-	outpre = 'output'
 
 
 # read in the file, line by line, processing and keeping comparisons less than the threshold
