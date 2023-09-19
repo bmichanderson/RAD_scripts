@@ -143,14 +143,19 @@ with open(vcf_file, 'r') as vcf, open(out_pre + '.vcf', 'w') as outfile:
 				calls = pieces[9:]
 			depths = []
 			genotypes = []
+			formatstr_list = pieces[8].split(':')
+			dp_index = [index for index, item in enumerate(formatstr_list) if item == 'DP'][0]
 			for call in calls:
 				'''	The format is GT:DP:CATG, so 0/0:85:0,85,0,0 for a homozygous AA with 85 depth
 					We want to grab the genotype (GT) and depth (DP)
+					Note: there are other formats where depth is not the second field, so I added dp_index above
 				'''
 				gt = call.split(':')[0].split('/')		# a list, e.g. ['0', '0']
-				genotypes.append(gt)		
+				genotypes.append(gt)
 				if gt != ['.', '.']:		# if not an N (shouldn't be needed, but currently is)
-					depths.append(int(call.split(':')[1]))
+					depth = call.split(':')[dp_index]
+					if depth != '.':
+						depths.append(int(depth))
 			# calculate stats depending on what filters need to be applied
 			keep_locus = True
 			while keep_locus:
