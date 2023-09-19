@@ -57,7 +57,16 @@ with open(vcf_file, 'r') as vcf, open('mod_' + vcf_file, 'w') as outvcf:
 		else:
 			line_fields = line.rstrip().split()
 			locus = line_fields[0]
-			snp_NS = line_fields[7].split(';')[0].split('=')[1]           # column 8 has NS=xx;DP=xx
+			info_field_list = line_fields[7].split(';')
+			ns_indices = [index for index, item in enumerate(info_field_list) if item.split('=')[0] == 'NS']
+			if len(ns_indices) == 0:		# no "NS" field
+				an_indices = [index for index, item in enumerate(info_field_list) if item.split('=')[0] == 'AN']
+				if len(an_indices) == 0:		# no "AN" field (allele count = 2 x samples with data)
+					print('No fields counting data coverage detected. Exiting...')
+					sys.exit(1)
+				else:
+					ns_indices = an_indices
+			snp_NS = info_field_list[ns_indices[0]].split('=')[1]
 			if locus != this_locus:
 				if count_loci == 0:     # the first locus
 					this_locus = locus
