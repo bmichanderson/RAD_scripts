@@ -310,6 +310,46 @@ if (vcf_present) {
 		### export the pairwise Fst values to file
 		#write.table(h_fsts, file = paste0(out_pref, "_hierfstat_Fst.txt"),
 		#	quote = FALSE, row.names = TRUE)
+
+
+		### Another way to calculate Fst that accounts for smaller/different
+		### sample sizes was put forward by Reich et al. 2009 and shown to
+		### be less biased by sample size in Willing et al. 2012
+		### This measure was implemented for a genlight object here:
+		### https://github.com/jessicarick/reich-fst/blob/master/reich_fst.R
+		### A modified version of that calculation is included here to avoid
+		### the need to use other R packages
+		pops <- unique(populations)
+		fsts_reich <- matrix(nrow = length(pops),
+			ncol = length(pops),
+			dimnames = list(pops, pops))
+		index <- 1
+		cat(paste0("Calculating pairwise Fst for populations",
+			" (", length(pops), "):"))
+		for (pop in pops) {
+			cat(paste0(" ", index))
+			pop1mat <- as.matrix(genl[genl@pop == pop])
+			a1 <- apply(pop1mat, 2, function(x) sum(x, na.rm = TRUE))
+			n1 <- apply(pop1mat, 2, function(x) 2 * sum(!is.na(x)))
+			h1 <- (a1 * (n1 - a1)) / (n1 * (n1 - 1))
+			for (pop2 in pops[-1: -index]) {
+				pop2mat <- as.matrix(genl[genl@pop == pop2])
+				a2 <- apply(pop2mat, 2, function(x) sum(x, na.rm = TRUE))
+				n2 <- apply(pop2mat, 2, function(x) 2 * sum(!is.na(x)))
+				h2 <- (a2 * (n2 - a2)) / (n2 * (n2 - 1))
+				bign <- ((a1 / n1) - (a2 / n2))^2 - (h1 / n1) - (h2 / n2)
+				bigd <- bign + h1 + h2
+				fst_r <- sum(bign, na.rm = TRUE) / sum(bigd, na.rm = TRUE)
+				fsts_reich[pop2, pop] <- fst_r
+			}
+			index <- index + 1
+		}
+		cat("\n")
+
+		### export the pairwise Fst values to file
+		write.table(fsts_reich, file = paste0(out_pref, "_Reich_Fst.txt"),
+			quote = FALSE, row.names = TRUE)
+
 	}
 }
 
