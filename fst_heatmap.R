@@ -160,3 +160,10 @@ png(paste0(out_pref, "_Fst.png"), width = 20, height = 20, units = "cm", res = 6
 par(mar = c(5, 4, 4, 5) + 0.1)
 heatmapper(myfsts, palette = col_pal)
 invisible(dev.off())
+
+
+# output the Fst matrix if it was sorted
+if (pops_present) {
+	write.table(myfsts, file = paste0(out_pref, "_sorted_Fst.txt"),
+		quote = FALSE, row.names = TRUE)
+}
