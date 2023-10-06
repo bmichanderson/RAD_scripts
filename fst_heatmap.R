@@ -2,6 +2,7 @@
 ##########
 # Author: Ben Anderson
 # Date: Mar 2022
+# Modified: Oct 2023 (changed orientation and legend)
 # Description: create a population heatmap based on an input Fst matrix
 ##########
 
@@ -32,25 +33,36 @@ heatmapper <- function(fstmat, palette = "greens", ...) {
 		axes = FALSE,
 		main = expression("Pairwise F"[ST]),
 		useRaster = TRUE)
-	axis(1, at = seq(0, 1, length.out = ncol(fstmat)),
+	axis(1, at = seq(1, 0, length.out = ncol(fstmat)),
 		labels = colnames(fstmat), las = 2, lwd.ticks = 0)
-	axis(4, at = seq(0, 1, length.out = ncol(fstmat)),
+	axis(2, at = seq(0, 1, length.out = ncol(fstmat)),
 		labels = colnames(fstmat), las = 2, lwd.ticks = 0)
 	# legend
-	subx <- grconvertX(c(0, 0.2), from = "user", to = "ndc")
-	suby <- grconvertY(c(0.5, 1), from = "user", to = "ndc")
+	subx <- grconvertX(c(0.7, 0.9), from = "user", to = "ndc")
+	suby <- grconvertY(c(0.6, 1), from = "user", to = "ndc")
 	op <- par(fig = c(subx, suby),
-			mar = c(1, 1, 1, 0),
-			new = TRUE)
+		mar = c(1, 1, 1, 0),
+		new = TRUE)
 	legend_colours <- as.raster(hcl.colors(n = 100, palette = palette))
-	legend_seq <- seq(min(fstmat, na.rm = TRUE),
-				max(fstmat, na.rm = TRUE), length = 5)
-	legend_labels <- format(round(legend_seq, 2), nsmall = 2)
+	range_min <- min(fstmat, na.rm = TRUE)
+	range_max <- max(fstmat, na.rm = TRUE)
+	if (range_max - range_min < 0.2) {
+		mult <- 100
+		step <- 0.02
+		rnum <- 2
+	} else {
+		mult <- 10
+		step <- 0.1
+		rnum <- 1
+	}
+	legend_seq <- seq(ceiling(range_min * mult) / mult,
+		floor(range_max * mult) / mult, by = step)
+	legend_labels <- format(round(legend_seq, rnum), nsmall = rnum)
 	plot(x = c(0, 2), y = c(0, 1), type = "n",
 		axes = FALSE, xlab = "", ylab = "", main = "")
-	axis(side = 4, at = seq(0, 1, length = 5), pos = 1, labels = FALSE,
+	axis(side = 4, at = legend_seq / range_max, pos = 1, labels = FALSE,
 		col = 0, col.ticks = 1)
-	mtext(legend_labels, side = 4, line = -0.5, at = seq(0, 1, length = 5), las = 2)
+	mtext(legend_labels, side = 4, line = -0.5, at = legend_seq / range_max, las = 2)
 	rasterImage(legend_colours, xleft = 0, ybottom = 0, xright = 1, ytop = 1)
 	par(op)
 }
@@ -127,8 +139,9 @@ if (pops_present) {
 }
 
 
-# set the top to NA for plotting
-myfsts[upper.tri(myfsts)] <- NA
+# set the bottom to NA and flip horizontally for plotting
+myfsts[lower.tri(myfsts)] <- NA
+myfsts <- myfsts[, seq(ncol(myfsts), 1)]
 
 
 # start creating a pdf
