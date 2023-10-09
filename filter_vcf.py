@@ -149,8 +149,9 @@ with open(vcf_file, 'r') as vcf, open(out_pre + '.vcf', 'w') as outfile:
 				'''	The format is GT:DP:CATG, so 0/0:85:0,85,0,0 for a homozygous AA with 85 depth
 					We want to grab the genotype (GT) and depth (DP)
 					Note: there are other formats where depth is not the second field, so I added dp_index above
+					Note2: some genotypes may be phased ('|'), so account for that
 				'''
-				gt = call.split(':')[0].split('/')		# a list, e.g. ['0', '0']
+				gt = call.split(':')[0].replace('|', '/').split('/')		# a list, e.g. ['0', '0']
 				genotypes.append(gt)
 				if gt != ['.', '.']:		# if not an N (shouldn't be needed, but currently is)
 					depth = call.split(':')[dp_index]

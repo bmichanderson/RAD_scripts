@@ -74,8 +74,9 @@ with open(vcf_file, 'r') as vcf:
 			for call in calls:
 				'''	The format is GT:DP:CATG, so 0/0:85:0,85,0,0 for a homozygous AA with 85 depth
 					We want to grab the genotype (GT) 0/0 then split that into the two alleles 0 and 0 as a list
+					Note: some genotypes may be phased ('|'), so account for that
 				'''
-				genotypes.append(call.split(':')[0].split('/'))
+				genotypes.append(call.split(':')[0].replace('|', '/').split('/'))
 			snps.append(genotypes)
 			count_snps = count_snps + 1
 	print('Read in a VCF file with ' + str(len(sample_labels)) + ' samples and ' + str(count_snps) + ' SNP loci')
