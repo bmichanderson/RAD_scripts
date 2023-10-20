@@ -58,7 +58,7 @@ with open(col_file, 'r') as infile:
 
 
 # load the pops file, keeping the order
-sample_df = pd.read_csv(pops_file, sep = '\t', header = None)
+sample_df = pd.read_csv(pops_file, sep = '\t', header = None, dtype = {0: 'string'})
 sample_df.rename(columns = {0: 'Sample', 1: 'Pop'},	inplace = True)
 
 
