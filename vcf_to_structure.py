@@ -3,6 +3,7 @@
 ##########################
 # Author: B. Anderson
 # Date: Oct 2021
+# Modified: Oct 2023 (cleaned up)
 # Description: convert a VCF file (VCF 4.0) to the Structure input format (and optionally fastStructure too)
 ##########################
 
@@ -14,13 +15,13 @@ import argparse
 
 # instantiate the parser
 parser = argparse.ArgumentParser(description = 'A script to convert a VCF file to the input format required by Structure;' +
-												' it is up to the user to ensure the VCF has the SNPs of interest (e.g. already one per locus)')
+	' it is up to the user to ensure the VCF has the SNPs of interest (e.g. already one per locus)')
 
 
 # add arguments to parse
 parser.add_argument('vcf_file', type = str, help = 'The VCF file to convert')
-parser.add_argument('-p', type = str, dest = 'pops_file', help = 'A pops file of sample identifiers (same as in the VCF) and numerical ' +
-																'population designation, one per line')
+parser.add_argument('-p', type = str, dest = 'pops_file', help = 'A pops file of sample identifiers (same as in the VCF) ' +
+	'and numerical population designation, one per line')
 parser.add_argument('-f', type = str, dest = 'fast', help = 'Whether to output a fastStructure format file, yes or no [default]')
 
 
@@ -30,11 +31,9 @@ if len(sys.argv[1:]) == 0:		# if there are no arguments
 	sys.exit(1)
 
 args = parser.parse_args()
-
 vcf_file = args.vcf_file
 pops_file = args.pops_file
 fast = args.fast
-
 mode = 'Structure'
 
 if fast:
@@ -43,7 +42,6 @@ if fast:
 		mode = 'FastStructure'
 else:
 	output_fast = False
-
 
 
 # process the pops file
