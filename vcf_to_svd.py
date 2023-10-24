@@ -3,7 +3,7 @@
 ##########################
 # Author: B. Anderson
 # Date: Dec 2021
-# Updated: May 2022
+# Updated: May 2022, Oct 2023 (support for phased genotypes)
 # Description: convert a VCF file (VCF 4.0) to a Nexus file for SVDquartets
 ##########################
 
@@ -32,7 +32,6 @@ if len(sys.argv[1:]) == 0:		# if there are no arguments
 	sys.exit(1)
 
 args = parser.parse_args()
-
 vcf_file = args.vcf_file
 sample_file = args.sample_file
 out_format = args.out_format
@@ -75,7 +74,7 @@ with open(vcf_file, 'r') as vcf:
 	snps = []
 	count_snps = 0
 	for line in vcf:
-		if line.startswith('#'):        # a header INFO line
+		if line.startswith('#'):		# a header INFO line
 			if line.startswith('#CHROM'):		# the line with sample names
 				sample_labels = line.rstrip().split()[9:]
 		else:
@@ -94,8 +93,9 @@ with open(vcf_file, 'r') as vcf:
 					The format is GT:DP:CATG, so 0/0:85:0,85,0,0 for a homozygous AA with 85 depth
 					We want to grab the genotype (GT) 0/0 then split that into the two alleles 0 and 0 as a list
 					Then convert that into bases
+					Note: some genotypes may be phased ('|'), so account for that
 				'''
-				genotype = call.split(':')[0].split('/')
+				genotype = call.split(':')[0].replace('|', '/').split('/')
 				allele1 = genotype[0]
 				allele2 = genotype[1]
 				if allele1 == '.':		# missing data
