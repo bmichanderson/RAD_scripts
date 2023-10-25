@@ -3,7 +3,7 @@
 ##########################
 # Author: B. Anderson
 # Date: Dec 2021
-# Updated: May 2022, Oct 2023 (support for phased genotypes)
+# Updated: May 2022, Oct 2023 (support for phased genotypes; support for deletions in GATK)
 # Description: convert a VCF file (VCF 4.0) to a Nexus file for SVDquartets
 ##########################
 
@@ -53,6 +53,9 @@ else:
 
 
 # create an ambiguity dictionary
+# Note: if GATK calling, there may be "*" for an alternate allele indicating a deletion
+#	See comment in genotyping section below where these are coded as "?"
+#	Treat these as homozygotes for the single sequence output (retained in the haplotype output)
 amb_dict = {
 	'CT': 'Y',
 	'TC': 'Y',
@@ -65,7 +68,15 @@ amb_dict = {
 	'GT': 'K',
 	'TG': 'K',
 	'AC': 'M',
-	'CA': 'M'
+	'CA': 'M',
+	'A?': 'A',
+	'?A': 'A',
+	'C?': 'C',
+	'?C': 'C',
+	'G?': 'G',
+	'?G': 'G',
+	'T?': 'T',
+	'?T': 'T'
 }
 
 
@@ -83,6 +94,8 @@ with open(vcf_file, 'r') as vcf:
 			all_bases.append(parts[3])	# the ref allele
 			if ',' in parts[4]:		# a multi-allele
 				for allele in parts[4].split(','):
+					if allele == '*':		# GATK VCFs may indicate "*" for a deletion
+						allele = '?'
 					all_bases.append(allele)
 			else:
 				all_bases.append(parts[4])
@@ -96,12 +109,15 @@ with open(vcf_file, 'r') as vcf:
 					Note: some genotypes may be phased ('|'), so account for that
 				'''
 				genotype = call.split(':')[0].replace('|', '/').split('/')
-				allele1 = genotype[0]
-				allele2 = genotype[1]
-				if allele1 == '.':		# missing data
-					genotypes.append(['?', '?'])
+				if genotype[0] == '.':		# missing data
+					allele1 = '?'
 				else:
-					genotypes.append([all_bases[int(allele1)], all_bases[int(allele2)]])
+					allele1 = all_bases[int(genotype[0])]
+				if genotype[1] == '.':
+					allele2 = '?'
+				else:
+					allele2 = all_bases[int(genotype[1])]
+				genotypes.append([allele1, allele2])
 			snps.append(genotypes)
 			count_snps = count_snps + 1
 
