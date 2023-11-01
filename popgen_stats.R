@@ -173,6 +173,7 @@ if (all(c(! vcf_present, ! fasta_present))) {
 
 # read in the input files
 sample_table <- read.table(samples_file, sep = "\t", header = FALSE)
+sample_table[2] <- lapply(sample_table[2], as.character)		# convert if populations are numbers
 if (vcf_present) {
 	vcf <- read.vcfR(vcf_file, verbose = FALSE)
 	cat("Read in a VCF with", ncol(vcf@gt) - 1, "samples,",
