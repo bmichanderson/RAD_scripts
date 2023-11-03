@@ -2,7 +2,7 @@
 ##########
 # Author: Ben Anderson, with ideas from Rachel Binks
 # Date: Dec 2021
-# Modified: May 2022, Oct 2022 (combined with fasta)
+# Modified: May 2022, Oct 2022 (combined with fasta), Oct 2023 (added Reich Fst)
 # Description: calculate various popgen stats for a VCF file or a fasta alignment
 # Note:	at least one of the VCF or fasta files must be present
 ##########
@@ -91,12 +91,11 @@ het_measure <- function(x) {
 ### or the probability of choosing an allele that is different
 ### or the expected heterozygosity
 ### we can calculate this with either:
-### 1) Nei & Roychoudhury 1974:
-###		pi = (n / n - 1) * (1 - sum[ (ni / n)^2 ])
-### 2) Hohenlohe et al. 2010:
-###		pi = 1 - sum[ (ni choose 2) / (n choose 2) ]
+### 1) Nei & Roychoudhury 1974:	pi = (n / n - 1) * (1 - sum[ (ni / n)^2 ])
+### or
+### 2) Hohenlohe et al. 2010: pi = 1 - sum[ (ni choose 2) / (n choose 2) ]
 ### where ni = count of allele i in the sample; n = sum of all allele counts
-### we'll use Hohenlohe
+### Use Hohenlohe
 gd_measure <- function(x) {
 	y <- x[!is.na(x)]		# only account for non NA
 	mylen <- length(y)
@@ -130,12 +129,12 @@ gd_measure <- function(x) {
 
 # Parse the command line
 args <- commandArgs(trailingOnly = TRUE)
-
-if (length(args) == 0) {
+if (length(args) == 0) { # nolint
 	stop(help(), call. = FALSE)
 } else {
 	catch_args <- vector("list")
-	i <- 1
+	extra <- 1
+	catch <- TRUE
 	out_pref <- "output"
 	vcf_present <- FALSE
 	fasta_present <- FALSE
@@ -144,21 +143,29 @@ if (length(args) == 0) {
 	for (index in seq_len(length(args))) {
 		if (args[index] == "-o") {
 			out_pref <- args[index + 1]
+			catch <- FALSE
 		} else if (args[index] == "-s") {
 			samples_present <- TRUE
 			samples_file <- args[index + 1]
+			catch <- FALSE
 		} else if (args[index] == "-v") {
 			vcf_present <- TRUE
 			vcf_file <- args[index + 1]
+			catch <- FALSE
 		} else if (args[index] == "-f") {
 			fasta_present <- TRUE
 			fasta_file <- args[index + 1]
+			catch <- FALSE
 		} else if (args[index] == "-t") {
 			run_fst <- TRUE
 			cat("Will run Fst calculations\n")
 		} else {
-			catch_args[i] <- args[index]
-			i <- i + 1
+			if (catch) {
+				catch_args[extra] <- args[index]
+				extra <- extra + 1
+			} else {
+				catch <- TRUE
+			}
 		}
 	}
 }
@@ -201,7 +208,10 @@ if (vcf_present) {
 
 	## calculate amount of missing data, and average per pop
 	gt <- extract.gt(vcf, element = "GT")
-	missing <- apply(gt, MARGIN = 2, function(x) { sum(is.na(x)) })
+	missing <- apply(gt, MARGIN = 2, function(x) {
+			sum(is.na(x))
+		}
+	)
 	missing <- 100 * missing / nrow(vcf)
 	misspops <- sample_table$V2[match(names(missing), sample_table$V1)]
 	names(missing) <- misspops
@@ -279,12 +289,10 @@ if (vcf_present) {
 
 	## Run Fst calculations if requested
 	if (run_fst) {
-		### calculate pairwise Fst
-		cat("Calculating pairwise Fst with StAMPP\n")
-
-		### The faster way is via a genlight and StAMPP
+		### One way is via a genlight and StAMPP
 		### convert the vcf to a genlight, then add pop
 		### NOTE: this will remove sites that are not biallelic
+		cat("Calculating pairwise Fst with StAMPP\n")
 		genl <- vcfR2genlight(vcf)
 		pop(genl) <- populations
 		cat(paste0("The genlight has ", nLoc(genl), " loci\n"))
@@ -298,19 +306,6 @@ if (vcf_present) {
 		### export the pairwise Fst values to file
 		write.table(fsts, file = paste0(out_pref, "_StAMPP_Fst.txt"),
 			quote = FALSE, row.names = TRUE)
-
-		### A slower way is using the hierfstat package
-		### this calculates Fst following Weir and Cockerham 1984
-		### since this doesn't convert to genlight, it keeps all sites
-		#cat("And more slowly with hierfstat...\n")
-		#h_fsts <- pairwise.WCfst(my_hfst)
-
-		### make the resulting square matrix a lower triangle matrix
-		#h_fsts[upper.tri(h_fsts)] <- NA
-
-		### export the pairwise Fst values to file
-		#write.table(h_fsts, file = paste0(out_pref, "_hierfstat_Fst.txt"),
-		#	quote = FALSE, row.names = TRUE)
 
 
 		### Another way to calculate Fst that accounts for smaller/different
@@ -408,9 +403,8 @@ if (fasta_present) {
 		summary[pop, "He_SE"] <- stde(gened)
 
 		### calculate the fixation index inbreeding coefficient Fis
-		### from Nei 1977:
-		###	Fis = (He - Ho) / He = 1 - Ho / He
-		### note: this only uses sites with non-zero gene diversity (He), not all sites
+		### from Nei 1977: Fis = (He - Ho) / He = 1 - Ho / He
+		### Note: this only uses sites with non-zero gene diversity (He), not all sites
 		indices <- which(gened > 0)
 		fis <- 1 - hets[indices] / gened[indices]
 		summary[pop, "Fis"] <- mean(fis, na.rm = TRUE)
