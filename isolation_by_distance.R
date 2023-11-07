@@ -2,6 +2,7 @@
 ##########
 # Author: Ben Anderson
 # Date: Feb 2022
+# Modified: Nov 2023 (account for pop names as numbers)
 # Description: compare a distance matrix (e.g. Fst) to geographic distance
 ##########
 
@@ -77,10 +78,11 @@ if (any(c(! dist_present, ! loc_present))) {
 
 
 # read in the data; filter the distance matrix to only keep samples if specified
-dist_mat <- read.csv(dist_file, sep = " ", header = TRUE)
+dist_mat <- read.csv(dist_file, sep = " ", header = TRUE, check.names = FALSE)	# in case populations are numbers
 loc_table <- read.table(loc_file, sep = "\t", header = FALSE)
 if (samples_present) {
 	sample_table <- read.table(sample_file, header = FALSE)
+	sample_table[1] <- lapply(sample_table[1], as.character)		# convert if populations are numbers
 	dist_mat <- dist_mat[rownames(dist_mat) %in% sample_table[, 1], colnames(dist_mat) %in% sample_table[, 1]]
 }
 
