@@ -31,19 +31,10 @@ help <- function(help_message) {
 		cat("\t\tIf not provided, the parameter values will be displayed arbitrarily\n")
 		cat("\t-r\tA text file with sample IDs of replicate pairs (tab separated, one per line)\n")
 		cat("\t-s\tA text file with sample IDs and populations (tab separated, one per line)\n")
-		cat("\t\tNote: you can optionally include decimal latitude and longitude as the third and fourth columns\n")
 		cat("\t\tIf a samples file is provided, only the specified samples in the VCF files will be analysed\n")
 	} else {
 		cat(help_message)
 	}
-}
-
-
-## a function to read in a VCF file and convert to a genlight
-## returns a genlight
-vcftogenl <- function(vcf_file) {
-	vcf <- read.vcfR(vcf_file, verbose = FALSE)
-	suppressWarnings(vcfR2genlight(vcf))
 }
 
 
@@ -58,92 +49,110 @@ paris <- function(genl) {
 }
 
 
-## functions to run error rate assessments
+## a function (and subfunctions) to run error rate assessments
 ## -- based on metrics used in Mastretta-Yanes et al. (2015) --
+## arguments are a genlight and a table with the replicate pair sampleIDs, one pair per row (2 columns)
 ## returns a dataframe with columns corresponding to locus, allele and snp error rates
 mastretta_error <- function(genl, reps) {
-	error_df <- as.data.frame(matrix(nrow = nrow(reps), ncol = 3))
-	colnames(error_df) <- c("locus", "allele", "snp")
-	for (pair_row in seq_len(nrow(reps))) {
-		pair_genl <- genl[match(c(reps[pair_row, ]), genl@ind.names)]
-		# locus
-		# loci found in one rep but not the other divided by total potential shared
-		na_pos <- NA.posi(pair_genl)				# NA positions in the genlight
-		na_rep <- na_pos[[1]]						# NA positions in the rep
-		rep_genl <- pair_genl[1, -na_rep]			# remove NA
-		rep_loci <- unique(rep_genl@chromosome)		# find unique loci names
-		na_samp <- na_pos[[2]]						# NA positions in the samp
-		samp_genl <- pair_genl[2, -na_samp]			# remove NA
-		samp_loci <- unique(samp_genl@chromosome)	# find unique loci names
-		diffs <- length(setdiff(rep_loci, samp_loci)) + length(setdiff(samp_loci, rep_loci))
-		in_both <- intersect(rep_loci, samp_loci)
-		locus_error <- 100 * diffs / (diffs + length(in_both))	# diffs divided by possible comparisons
+	### a function to grab a list of loci present (at least one SNP called) for a sample index in a genlight
+	getloci <- function(genl, sampind) {
+		na_positions <- NA.posi(genl)[[sampind]]
+		unique(genl[sampind, -na_positions]@chromosome)
+	}
 
-		# allele
-		# differences between loci as a whole
-		chrom_list <- rep(NA, length = length(in_both))
-		allele_genl <- pair_genl[, pair_genl@chromosome %in% in_both]
-		comp_mat <- as.matrix(allele_genl)
-		comp_mat[is.na(comp_mat)] <- 3			# change NA to a number that won't match
-		index <- 1
+	### a function to find differences between two samples for every locus
+	### the genlight should only have two samples
+	### returns the number of loci that differ
+	compare_alleles <- function(genl) {
 		allele_errors <- 0
-		for (snp in seq_len(ncol(comp_mat))) {
-			if (as.character(allele_genl@chromosome[snp]) %in% chrom_list) {	# if we have seen this locus already
-				if (! hit) {	# if we haven't found an error yet
-					if (comp_mat[1, snp] != comp_mat[2, snp]) {
-						allele_errors <- allele_errors + 1
-						hit <- TRUE
-					}
-				}
-			} else {	# new locus
-				chrom_list[index] <- as.character(allele_genl@chromosome[snp])	# add it to the list
-				index <- index + 1
-				if (comp_mat[1, snp] != comp_mat[2, snp]) {
+		for (chrom in unique(genl@chromosome)) {
+			comp_mat <- as.matrix(genl[, genl@chromosome == chrom])
+			comp_mat[is.na(comp_mat)] <- 3		# change to a number that won't match
+			for (col in seq_len(ncol(comp_mat))) {
+				if (comp_mat[1, col] != comp_mat[2, col]) {
 					allele_errors <- allele_errors + 1
-					hit <- TRUE
-				} else {
-					hit <- FALSE
+					break
 				}
 			}
 		}
-		allele_error <- 100 * allele_errors / (length(in_both))
+		allele_errors
+	}
 
-		# SNP
-		# differences between every shared SNP
-		comp_mat <- comp_mat[, colSums(comp_mat == 3) == 0]		# completely remove any NA comparisons
+	### a function to find differences between two samples for every SNP
+	### the genlight should only have two samples
+	### returns the number of called SNPs that differ, and the number called in both
+	compare_snps <- function(genl) {
 		snp_errors <- 0
-		for (snp in seq_len(ncol(comp_mat))) {
-			if (comp_mat[1, snp] != comp_mat[2, snp]) {
+		comp_mat <- as.matrix(genl)
+		comp_mat <- comp_mat[, colSums(is.na(comp_mat)) == 0]	# remove SNPs with at least one uncalled
+		for (col in seq_len(ncol(comp_mat))) {
+			if (comp_mat[1, col] != comp_mat[2, col]) {
 				snp_errors <- snp_errors + 1
 			}
 		}
-		snp_error <- 100 * snp_errors / ncol(comp_mat)
+		c(snp_errors, ncol(comp_mat))
+	}
 
-		# capture the values
+	### make a dataframe for output
+	error_df <- as.data.frame(matrix(nrow = nrow(reps), ncol = 3))
+	colnames(error_df) <- c("locus", "allele", "snp")
+
+	### cycle through the replicate pairs
+	for (pair_row in seq_len(nrow(reps))) {
+		#### subset the genl for that pair
+		pair_genl <- genl[match(c(reps[pair_row, ]), genl@ind.names)]
+
+		#### locus error: loci found in one rep but not the other divided by total potential shared
+		rep_loci <- getloci(pair_genl, 1)
+		samp_loci <- getloci(pair_genl, 2)
+		num_diffs <- length(setdiff(rep_loci, samp_loci)) + length(setdiff(samp_loci, rep_loci))
+		in_both <- intersect(rep_loci, samp_loci)
+		locus_error <- 100 * num_diffs / (num_diffs + length(in_both))
+
+		#### allele error: whether shared loci differ in sequence (any SNP, including no call in one)
+		share_genl <- pair_genl[, pair_genl@chromosome %in% in_both]
+		allele_errors <- compare_alleles(share_genl)
+		allele_error <- 100 * allele_errors / (length(in_both))
+
+		#### snp error: differences between any shared SNP divided by total shared
+		snp_output <- compare_snps(share_genl)
+		snp_errors <- snp_output[1]
+		snps_shared <- snp_output[2]
+		snp_error <- 100 * snp_errors / snps_shared
+
+		#### capture the values
 		error_df[pair_row, ] <- c(locus_error, allele_error, snp_error)
 	}
 	error_df
 }
 
 
-## functions to run intrapopulation distances
-## -- based on a metric used in Mastretta-Yanes et al. (2015) --
+## a function to evaluate within-population distances
+## -- based on the suggestion in Mastretta-Yanes et al. (2015) --
 ## returns a dataframe with columns of number of individuals and average distances
-mastretta_dist <- function(genl, pop_table) {
-	dist_obj <- dist(as.matrix(genl))		# choose a better metric?
-	# normalize the distances
-	dist_mat <- as.matrix(dist_obj / max(dist_obj))
-	# extract distances between individuals of the same population
-	pops <- unique(pop_table[, 2])
-	dists_df <- as.data.frame(matrix(nrow = length(pops), ncol = 2))
+pop_dist <- function(vcfr, sampleids, pops) {
+	### load libraries
+	suppressMessages(library(ape))
+	suppressMessages(library(pofadinr))
+
+	### calculate distances for the VCF samples
+	dnabin <- suppressMessages(vcfR2DNAbin(vcfr, consensus = TRUE, extract.haps = FALSE))
+	temp <- as.character(dnabin)
+	temp[temp == "n"] <- "?"	# replace missing with a character recognised by pofadinr
+	dnabin <- as.DNAbin(temp)
+	distances <- dist.snp(dnabin, model = "GENPOFAD")
+	dist_mat <- as.matrix(distances)
+
+	### extract distances between individuals of the same population
+	pop_names <- unique(pops)
+	dists_df <- as.data.frame(matrix(nrow = length(pop_names), ncol = 2))
 	colnames(dists_df) <- c("number_ind", "mean_intra_dist")
-	for (popnum in seq_len(length(pops))) {
-		pop <- pops[popnum]
-		pos <- pop_table[, 2] %in% pop			# find the positions which match that pop
-		dmat <- dist_mat[pos, pos]			# extract a smaller matrix of samples from that pop
-		dists <- dmat[lower.tri(dmat)]			# keep the lower triangle values
-		avg_dist <- mean(dists)				# calculate an average within population distance
-		dists_df[popnum, ] <- c(nrow(dmat), avg_dist)
+	for (popnum in seq_len(length(pop_names))) {
+		pop <- pop_names[popnum]
+		samples <- sampleids[pops == pop]
+		sub_mat <- dist_mat[rownames(dist_mat) %in% samples, colnames(dist_mat) %in% samples]
+		avg_dist <- mean(sub_mat)
+		dists_df[popnum, ] <- c(nrow(sub_mat), avg_dist)
 	}
 	dists_df
 }
@@ -212,27 +221,91 @@ if (params_present) {
 
 if (reps_present) {
 	reps_table <- read.table(reps_file, sep = "\t", header = FALSE)
+	reps_table[] <- lapply(reps_table, as.character)
 }
 
 if (samples_present) {
 	samples_table <- read.table(samples_file, sep = "\t", header = FALSE)
 	sampleids <- as.character(samples_table[, 1])
-	pops <- unique(as.character(samples_table[, 2]))
-	if (ncol(samples_table) == 4) {
-		locations_present <- TRUE
-	} else {
-		locations_present <- FALSE
+	pops <- as.character(samples_table[, 2])		# corresponding sequence to samples (not unique)
+}
+
+
+##########
+# execute the analyses
+
+## create the dataframes for holding the results
+
+
+## cycle through the VCF files
+for (vcf_file in catch_args) {
+	vcfr <- read.vcfR(vcf_file, verbose = FALSE)
+	genl <- suppressMessages(vcfR2genlight(vcfr))
+
+	## if there is a samples file, subset the genl
+	## also, calculate within-population distances
+	if (samples_present) {
+		genl <- genl[match(sampleids, genl@ind.names)]
+		pop_dists <- pop_dist(vcfr, sampleids, pops)
+	}
+
+	## calculate Paris
+	paris_num <- paris(genl)
+
+	## if there is a replicates file, calculate error rates
+	if (reps_present) {
+		merror_df <- mastretta_error(genl, reps_table)
 	}
 }
 
 
 
 
+# If there is a samples file, plot within-population distances
+if (samples_present) {
+######
+	boxplot(100 * mydist_table$V3 ~ mydist_table$V1,
+		main = "Within Population Distances",
+		ylab = "Average GENPOFAD distance"
+	)
+}
 
-# execute the analyses
 
 
+##############################
 
+if (merror_present) {
+	# plot Mastretta-Yanes errors
+	pdf(file = paste0(outpre, "_merror.pdf"))
+	myerror_table <- read.table(merror_file, sep = "\t", header = FALSE)
+	boxplot(myerror_table$V2 ~ myerror_table$V1,
+		main = paste0("Locus error rates\n",
+			"(loci present in one rep but not the other, relative to total in either/both)"),
+		ylab = "Locus error rate (%)", xlab = "Clustering threshold (%)")
+	boxplot(myerror_table$V3 ~ myerror_table$V1,
+		main = "Allele error rates\n(loci present in both that differ, relative to total in both)",
+		ylab = "Allele error rate (%)", xlab = "Clustering threshold (%)")
+	boxplot(myerror_table$V4 ~ myerror_table$V1,
+		main = "SNP error rates\n(SNPs called in both that differ, relative to total called in both)",
+		ylab = "SNP error rate (%)", xlab = "Clustering threshold (%)")
+	invisible(dev.off)
+}
+
+if (mparis_present) {
+	# plot Paris et al counts of loci and SNPs in >= 80% of individuals
+	pdf(file = paste0(outpre, "_mparis.pdf"))
+	count_table <- read.table(mparis_file, sep = "\t", header = FALSE)
+	plot(count_table$V1, count_table$V2, main = "Total number of loci recovered in >= 80% of individuals",
+		ylab = "Number of loci", xlab = "Clustering threshold (%)", xaxt = "n", pch = 16)
+	axis(1, at = seq(min(count_table$V1), max(count_table$V1), by = 1))
+	plot(count_table$V1, count_table$V3, main = "Total number of SNPs recovered in >= 80% of individuals",
+		ylab = "Number of SNPs", xlab = "Clustering threshold (%)", xaxt = "n", pch = 16)
+	axis(1, at = seq(min(count_table$V1), max(count_table$V1), by = 1))
+	invisible(dev.off())
+}
+
+
+############################
 
 
 # plot
