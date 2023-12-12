@@ -5,7 +5,7 @@
 # Note: the minimum arguments are multiple VCF files (one per parameter combination)
 #	It is helpful to also indicate the association between the files and the parameter values (-p),
 #	specify which sample IDs are replicate pairs (-r), a samples and populations file to limit which
-#	to analyse (-s), as well as	a custom stats file from ipyrad (if you used that) for autosomal output (-i)
+#	to analyse (-s), as well as a custom stats file from ipyrad (if you used that) for autosomal output (-i)
 # Note2: this script relies on genlight objects, which only uses biallelic SNPs (may underestimate heterozygosity)
 ##########
 
