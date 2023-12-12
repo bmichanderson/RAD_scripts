@@ -1,0 +1,293 @@
+---
+title: "Filter DArT data with dartR"
+output: html_document
+---
+
+This markdown provides a series of commands that may be useful when exploring and filtering DArT datasets  
+It relies on the package `dartR` (using v. 2.9.7) and its dependencies  
+
+Files are expected to be in the current working directory (set it with `setwd("/path/to/wd")`)  
+Input files are:  
+1) A CSV file from DArT containing SNPs scored as "1" or "0" on two lines (alleles)  
+2) A CSV file of individual metadata (header: `id,pop,lat,lon`)  
+
+Load library and designate input  
+```{r}
+suppressMessages(library("dartR"))
+snps_file <- "Report_DRhag23-8571_SNP_1.csv"
+meta_file <- "meta.csv"
+```
+
+Read in the DArT data (can take a bit for larger datasets)
+```{r}
+# recalc: recalculate stats in case individuals were not included in the meta_file (dropped)
+# probar: progress bar
+mygenl <- gl.read.dart(snps_file, ind.metafile = meta_file, recalc = TRUE, probar = TRUE)
+```
+
+ 
+# Evaluate different aspects of the unfiltered dataset  
+Map population locations  
+```{r}
+gl.map.interactive(mygenl)
+```
+
+Check (and plot to file, if desired, by running the bounding statements below):
+```{r}
+pdf("unfiltered.pdf")
+```
+Read depth  
+```{r}
+gl.report.rdepth(mygenl)
+```
+Tag length (sequence length)  
+```{r}
+gl.report.taglength(mygenl)
+```
+Call rate (missing data)  
+```{r}
+gl.report.callrate(mygenl, method = "loc")
+gl.report.callrate(mygenl, method = "ind")
+```
+Reproducibility  
+(whether calls are repeatable, averaged over both alleles)  
+```{r}
+gl.report.reproducibility(mygenl)
+```
+Secondaries (multiple SNPs per locus)  
+```{r}
+gl.report.secondaries(mygenl)
+```
+```{r}
+invisible(dev.off())
+```
+
+To generate more graphics-heavy outputs, make a larger pdf
+```{r}
+pdf("unfiltered_graphs.pdf", width = 21, height = 21)
+```
+Smear plot (can take a while with large datasets)  
+```{r}
+smearplotgl <- gl.smearplot(mygenl, ind_labels = FALSE)
+```
+Minor allele frequency  
+```{r}
+gl.report.maf(mygenl)
+```
+```{r}
+invisible(dev.off())
+```
+
+
+# Filter
+Change the name of the object for altering  
+```{r}
+filtered_genl <- mygenl
+snps_remain <- nLoc(filtered_genl)
+```
+
+Remove SNPs with low/high read depth (lower confidence in a call, higher error potentially)  
+```{r}
+filtered_genl <- gl.filter.rdepth(filtered_genl, lower = 6, upper = 100)
+diff <- snps_remain - nLoc(filtered_genl)
+cat(paste0("Removed ", diff, " SNPs\n"))
+cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and ",
+	nLoc(filtered_genl), " SNPs\n"))
+snps_remain <- nLoc(filtered_genl)
+```
+
+Filter based on tag length (sequence length: 20 to 69 bp); remove short loci depending on distribution 
+```{r}
+filtered_genl <- gl.filter.taglength(filtered_genl, lower = 60, upper = 69)
+diff <- snps_remain - nLoc(filtered_genl)
+cat(paste0("Removed ", diff, " SNPs\n"))
+cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and ",
+	nLoc(filtered_genl), " SNPs\n"))
+snps_remain <- nLoc(filtered_genl)
+```
+
+Filter based on reproducibility (a proxy for problems)
+```{r}
+filtered_genl <- gl.filter.reproducibility(filtered_genl, threshold = 0.95)
+diff <- snps_remain - nLoc(filtered_genl)
+cat(paste0("Removed ", diff, " SNPs\n"))
+cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and ",
+	nLoc(filtered_genl), " SNPs\n"))
+snps_remain <- nLoc(filtered_genl)
+```
+
+Filter for SNPs found in less than a proportion of samples  
+```{r}
+filtered_genl <- gl.filter.callrate(filtered_genl, method = "loc", threshold = 0.80)
+diff <- snps_remain - nLoc(filtered_genl)
+cat(paste0("Removed ", diff, " SNPs\n"))
+cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and ",
+	nLoc(filtered_genl), " SNPs\n"))
+snps_remain <- nLoc(filtered_genl)
+```
+
+Filter based on minor allele frequency  
+(if a value >1 is used, it is interpreted as minor allele count;
+this is preferable for a dataset of multiple populations)  
+```{r}
+filtered_genl <- gl.filter.maf(filtered_genl, threshold = 3)
+diff <- snps_remain - nLoc(filtered_genl)
+cat(paste0("Removed ", diff, " SNPs\n"))
+cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and ",
+	nLoc(filtered_genl), " SNPs\n"))
+snps_remain <- nLoc(filtered_genl)
+```
+
+Filter out individuals with large amounts of missing data  
+```{r}
+filtered_genl <- gl.filter.callrate(filtered_genl, method = "ind", threshold = 0.50)
+diff <- snps_remain - nLoc(filtered_genl)
+cat(paste0("Removed ", diff, " SNPs\n"))
+cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and ",
+	nLoc(filtered_genl), " SNPs\n"))
+snps_remain <- nLoc(filtered_genl)
+```
+
+Remove monomorphic and fully NA loci  
+```{r}
+filtered_genl <- gl.filter.monomorphs(filtered_genl)
+diff <- snps_remain - nLoc(filtered_genl)
+cat(paste0("Removed ", diff, " SNPs\n"))
+cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and ",
+	nLoc(filtered_genl), " SNPs\n"))
+snps_remain <- nLoc(filtered_genl)
+```
+
+If doing analyses sensitive to linkage (e.g. Structure), drop secondary SNPs  
+Can also do this with `method = "random"`  
+NOTE: If wanting to calculate population heterozygosity stats, keep these!
+```{r}
+filtered_genl <- gl.filter.secondaries(filtered_genl, method = "best")
+diff <- snps_remain - nLoc(filtered_genl)
+cat(paste0("Removed ", diff, " SNPs\n"))
+cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and ",
+	nLoc(filtered_genl), " SNPs\n"))
+snps_remain <- nLoc(filtered_genl)
+```
+
+It may be desirable to save the object for import later with `gl.load`  
+```{r}
+gl.save(filtered_genl, "filtered.Rdata")
+```
+
+
+# Visualise the filtered data
+Recalculate metrics in case samples have been dropped  
+```{r}
+filtered_genl <- gl.recalc.metrics(filtered_genl)
+```
+
+Check (and plot to file, if desired, by running the bounding statements below):
+```{r}
+pdf("filtered.pdf")
+```
+Read depth  
+```{r}
+gl.report.rdepth(filtered_genl)
+```
+Tag length (sequence length)  
+```{r}
+gl.report.taglength(filtered_genl)
+```
+Call rate (missing data)  
+```{r}
+gl.report.callrate(filtered_genl, method = "loc")
+gl.report.callrate(filtered_genl, method = "ind")
+```
+Reproducibility  
+(whether calls are repeatable, averaged over both alleles)  
+```{r}
+gl.report.reproducibility(filtered_genl)
+```
+Secondaries (multiple SNPs per locus)  
+```{r}
+gl.report.secondaries(filtered_genl)
+```
+```{r}
+invisible(dev.off())
+```
+
+Again, can make a larger pdf for graphs  
+```{r}
+pdf("filtered_graphs.pdf", width = 21, height = 21)
+```
+Smear plot  
+```{r}
+smearplotgl <- gl.smearplot(filtered_genl, ind_labels = FALSE)
+```
+Minor allele frequency  
+```{r}
+gl.report.maf(filtered_genl)
+```
+```{r}
+invisible(dev.off())
+```
+
+## PCA
+Can run a PCA of the genlight SNPs  
+```{r}
+pca <- gl.pcoa(filtered_genl, nfactors = 5, parallel = TRUE, n.cores = 8)
+```
+```{r}
+pdf("pca.pdf")
+```
+```{r}
+gl.pcoa.plot(pca, filtered_genl, pop.labels = "pop",
+	xaxis = 1, yaxis = 2, zaxis = NULL, interactive = FALSE)
+cat(paste0("Plotting a PCA based on ", snps_remain, " SNPs\n"))
+```
+```{r}
+invisible(dev.off())
+```
+Or plot interactively
+```{r}
+gl.pcoa.plot(pca, filtered_genl, pop.labels = "pop", xaxis = 1, yaxis = 2, zaxis = NULL, interactive = TRUE)
+```
+3D
+```{r}
+gl.pcoa.plot(pca, filtered_genl, pop.labels = "pop", xaxis = 1, yaxis = 2, zaxis = 3, interactive = TRUE)
+```
+
+
+# Output files for analysis
+We may be interested in a distance matrix or Structure input file  
+
+Distances  
+(method 3 = concatenate SNPs, with ambiguities for hets)  
+```{r}
+library("ape")
+library("pofadinr")
+gl2fasta(filtered_genl, outfile = "filtered_SNPs.fasta", method = 3, outpath = ".")
+mydnabin <- fasta2DNAbin("filtered_SNPs.fasta")
+temp <- as.character(mydnabin)
+temp[temp == "n"] <- "?"
+mydnabin <- as.DNAbin(temp)
+distance <- dist.snp(mydnabin, model = "GENPOFAD", as.matrix = TRUE)
+outfile <- file("filtered_GENPOFAD_dist.txt", open = "w")
+writeLines(as.character(nInd(filtered_genl)), con = outfile)
+write.table(distance, file = outfile, sep = " ", append = TRUE,
+	col.names = FALSE, quote = FALSE)
+close(outfile)
+```
+
+Structure  
+(first, replace pop with a number in the genlight)  
+```{r}
+strgenl <- filtered_genl
+index <- 1
+pops <- sort(unique(strgenl$pop))
+for (pop in pops) {
+	levels(strgenl$pop)[match(pop, levels(strgenl$pop))] <- index
+	index <- index + 1
+}
+gl2structure(strgenl, outfile = "filtered.str", addcolumns = strgenl$pop,
+	exportMarkerNames = FALSE, outpath = ".")
+coding <- cbind(strgenl$ind.names, strgenl$pop)
+write.table(coding[order(as.numeric(coding[, 2])), ], file = "filtered_str_pops.txt",
+	row.names = FALSE, col.names = FALSE, quote = FALSE)
+```
