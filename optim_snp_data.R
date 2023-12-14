@@ -199,7 +199,7 @@ if (length(catch_args) < 2) {
 if (ipyrad_present) {
 	het_stats <- read.table(ipyrad_file, sep = "\t", header = TRUE)
 } else {
-	cat("No ipyrad file detected, so calculating heterozygosity from SNPs\n")
+	cat("No ipyrad file detected, so calculating heterozygosity only from SNPs\n")
 }
 
 if (params_present) {
@@ -229,10 +229,15 @@ if (samples_present) {
 
 ## initiate the matrices for holding the results
 size_mat <- matrix(ncol = 3)
+colnames(size_mat) <- c("param", "num_loci", "num_snps")
 paris_mat <- matrix(ncol = 2)
+colnames(paris_mat) <- c("param", "num_loci")
 error_mat <- matrix(ncol = 4)
-dists_pop <- matrix(ncol = 3)
+colnames(error_mat) <- c("param", "locus_err", "allele_err", "snp_err")
+dists_pop <- matrix(ncol = 2)
+colnames(dists_pop) <- c("param", "dist")
 het_obs <- matrix(ncol = 3)
+colnames(het_obs) <- c("sample", "param", "het")
 
 ## cycle through the VCF files
 index <- 1
@@ -347,6 +352,17 @@ for (vcf_file in catch_args) {
 
 
 ##########
+# save the results to text files
+write.table(size_mat, file = paste0(out_pref, "_size.tab"), quote = FALSE, row.names = FALSE, sep = "\t")
+write.table(paris_mat, file = paste0(out_pref, "_paris.tab"), quote = FALSE, row.names = FALSE, sep = "\t")
+write.table(error_mat, file = paste0(out_pref, "_error.tab"), quote = FALSE, row.names = FALSE, sep = "\t")
+write.table(het_obs, file = paste0(out_pref, "_snphet.tab"), quote = FALSE, row.names = FALSE, sep = "\t")
+if (samples_present) {
+	write.table(dists_pop, file = paste0(out_pref, "_distspop.tab"), quote = FALSE, row.names = FALSE, sep = "\t")
+}
+
+
+##########
 # plot
 cat("\nPlotting...\n")
 
@@ -410,7 +426,7 @@ if (reps_present) {
 if (samples_present) {
 	boxplot(as.numeric(dists_pop[, 2]) ~ dists_pop[, 1],
 		main = "Within Population Genetic Distances",
-		ylim = c(0, max(as.numeric(dists_pop[, 2], na.rm = TRUE)) * 1.05),
+		ylim = c(0, max(as.numeric(dists_pop[, 2]), na.rm = TRUE) * 1.05),
 		ylab = "Average GENPOFAD distance", xlab = "")
 }
 
