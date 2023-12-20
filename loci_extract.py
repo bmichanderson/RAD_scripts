@@ -1,10 +1,12 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 ##########################
 # Author: B. Anderson
 # Date: Sep 2021
-# Modified: Nov 2021 (added a sample exclude option); Dec 2023 (increased summary and added consensus)
-# Description: extract loci from an ipyrad .loci file based on an input list
+# Modified: Nov 2021 (added a sample exclude option); Dec 2023 (increased summary and added consensus);
+#	Dec 2023 (extended to Stacks allelic output)
+# Description: extract loci from an ipyrad .loci file (or Stacks populations.samples.fa) based on an input list
+# Note: this script will convert the allelic data from Stacks (if run that way) to a single consensus per sample
 ##########################
 
 
@@ -66,16 +68,18 @@ def make_consensus(seq_list, locus_num):
 
 # instantiate the parser
 parser = argparse.ArgumentParser(description = 'A script to extract loci from an ipyrad .loci file using an input list of locus numbers. ' +
-	'The loci will be saved as individual fasta files in the current directory with prefix "locus_"')
+	'The loci will be saved as individual fasta files in the current directory with prefix "locus_". ' +
+	'Now also works for Stacks input (use arg --stacks)')
 
 
 # add arguments to parse
 parser.add_argument('loci_file', type = str, help = 'The .loci file to extract loci from')
-parser.add_argument('-c', action = 'store_true', help = 'Whether to output a file with consensus sequences of the loci (optional)')
+parser.add_argument('-c', action = 'store_true', help = 'Flag for whether to output a file with consensus sequences of the loci (optional)')
 parser.add_argument('-l', type = str, dest = 'loci_list', help = 'A text file with a list of desired loci numbers, one per line (optional). ' +
 	'If not provided, will extract all loci')
 parser.add_argument('-s', type = str, dest = 'samp_list', help = 'A text file with a list of sample names to exclude, one per line (optional). ' +
 	'If not provided, will include all samples')
+parser.add_argument('--stacks', action = 'store_true', help = 'Flag for whether the input file is from Stacks (optional) [default: ipyrad]')
 
 
 # parse the command line
@@ -87,11 +91,7 @@ consens = args.c
 loci_file = args.loci_file
 loci_list = args.loci_list
 samp_list = args.samp_list
-
-
-# check for consensus and create a list to hold them
-if consens:
-	consensus_list = []
+stacks = args.stacks
 
 
 # read in the list of loci (if present) and assign to a list
@@ -100,6 +100,7 @@ if loci_list:
 	with open(loci_list, 'r') as loci:
 		for locus in loci:
 			locus_nums.append(locus.rstrip())
+	print('Will attempt to extract ' + str(len(locus_nums)) + ' loci')
 
 
 # read in the list of samples (if present) and assign to a list
@@ -111,19 +112,45 @@ if samp_list:
 	print('Will exclude ' + str(len(samp_names)) + ' samples from extracted loci')
 
 
+# check for consensus and create a list to hold them
+if consens:
+	consensus_list = []
+	print('Will generate a consensus sequence for each locus')
+
+
 # extract the loci from the .loci file
 with open(loci_file, 'r') as locfile:
-	this_locus = []
+	counter = 1
 	found_loci = 0
 	processed_loci = 0
 	empty_loci = 0
 	locus_lengths = []
-	for line in locfile:
-		if line.startswith('//'):        # this indicates the final line of a locus
-			processed_loci = processed_loci + 1
-			locus_num = line.rstrip().split('|')[1]
-			if loci_list:
-				if locus_num in locus_nums:
+
+	###### ipyrad
+	if not stacks:		# the ipyrad .loci file has special formatting
+		this_locus = []
+		for line in locfile:
+			if line.startswith('//'):        # this indicates the final line of a locus
+				processed_loci = processed_loci + 1
+				if processed_loci > 100 * counter:
+					print('Processed ' + str(100 * counter) + ' loci')
+					counter = counter + 1
+				locus_num = line.rstrip().split('|')[1]
+				if loci_list:
+					if locus_num in locus_nums:
+						found_loci = found_loci + 1
+						if len(this_locus) > 0:
+							with open('locus_' + str(locus_num) + '.fasta', 'w') as outfile:
+								for entry in this_locus:
+									outfile.write('>' + entry.rstrip().split()[0] + '\n' + entry.rstrip().split()[1] + '\n')
+							locus_lengths.append(len(this_locus[0].rstrip().split()[1]))
+							if consens:
+								text_seqs = [entry.rstrip().split()[1] for entry in this_locus]
+								conseq = make_consensus(text_seqs, locus_num)
+								consensus_list.append(conseq)
+						else:
+							empty_loci = empty_loci + 1
+				else:
 					found_loci = found_loci + 1
 					if len(this_locus) > 0:
 						with open('locus_' + str(locus_num) + '.fasta', 'w') as outfile:
@@ -136,32 +163,106 @@ with open(loci_file, 'r') as locfile:
 							consensus_list.append(conseq)
 					else:
 						empty_loci = empty_loci + 1
+				this_locus = []
 			else:
-				found_loci = found_loci + 1
-				if len(this_locus) > 0:
-					with open('locus_' + str(locus_num) + '.fasta', 'w') as outfile:
-						for entry in this_locus:
-							outfile.write('>' + entry.rstrip().split()[0] + '\n' + entry.rstrip().split()[1] + '\n')
-					locus_lengths.append(len(this_locus[0].rstrip().split()[1]))
-					if consens:
-						text_seqs = [entry.rstrip().split()[1] for entry in this_locus]
-						conseq = make_consensus(text_seqs, locus_num)
-						consensus_list.append(conseq)
+				if samp_list:
+					if line.split()[0] not in samp_names:
+						this_locus.append(line)
 				else:
-					empty_loci = empty_loci + 1
-			this_locus = []
-		else:
-			if samp_list:
-				if line.split()[0] not in samp_names:
 					this_locus.append(line)
+
+	###### Stacks
+	else:		# the Stacks file is already fasta (note: two seqs per sample = alleles)
+		locus_count_list = []
+		seq_list = []
+		for line in locfile:
+			if line.startswith('#'):
+				continue
+			elif line.startswith('>'):
+				parts = line.strip().split()		# format: ">CLocus_1_Sample_100_Locus_1_Allele_0 [sampleID]"
+				locus_num = parts[0].split('_')[1]
+				sample = parts[1].strip('[').strip(']')
 			else:
-				this_locus.append(line)
+				if locus_num not in locus_count_list:
+					locus_count_list.append(locus_num)
+					processed_loci = processed_loci + 1
+					if processed_loci > 100 * counter:
+						print('Processed ' + str(100 * counter) + ' loci')
+						counter = counter + 1
+					# process the stored seq_list to ensure each sample is represented by only one sequence
+					# generate loci output and store consensus if requested
+					if len(seq_list) > 0:
+						found_loci = found_loci + 1
+						seq_out_list = []
+						sample_list = sorted(list(set([item[0] for item in seq_list])))
+						for samp in sample_list:
+							seqs = [item[1] for item in seq_list if item[0] == samp]
+							if len(seqs) == 1:	# only represented by one sequence
+								print('Sample ' + str(samp) + ' has one allele for locus ' + str(this_locus_num))
+								sample_seq = SeqRecord(Seq(seqs[0]), id = samp, name = samp, description = samp)
+								seq_out_list.append(sample_seq)				
+							elif len(seqs) > 2:	# shouldn't happen
+								print('Sample ' + str(samp) + ' has more than two alleles for locus ' + str(this_locus_num))
+							else:		# normal two alleles
+								sample_seq = make_consensus(seqs, samp)
+								seq_out_list.append(sample_seq)
+						with open('locus_' + str(this_locus_num) + '.fasta', 'w') as outfile:
+							for entry in seq_out_list:
+								SeqIO.write(entry, outfile, 'fasta')
+						locus_lengths.append(len(seq_out_list[0].seq))
+						if consens:
+							text_seqs = [str(entry.seq) for entry in seq_out_list]
+							conseq = make_consensus(text_seqs, this_locus_num)
+							consensus_list.append(conseq)
+					# reset the locus_num and seq_list
+					this_locus_num = locus_num
+					seq_list = []
+
+				# store the line (sequence)
+				if loci_list:
+					if locus_num in locus_nums:		# a target locus
+						if samp_list:
+							if sample not in samp_list:		# a desirable sample
+								seq_list.append([sample, line.strip()])
+						else:
+							seq_list.append([sample, line.strip()])
+				elif samp_list:
+					if sample not in samp_list:
+						seq_list.append([sample, line.strip()])
+				else:
+					seq_list.append([sample, line.strip()])
+
+		# run once more for last locus
+		if len(seq_list) > 0:
+			found_loci = found_loci + 1
+			seq_out_list = []
+			sample_list = sorted(list(set([item[0] for item in seq_list])))
+			for samp in sample_list:
+				seqs = [item[1] for item in seq_list if item[0] == samp]
+				if len(seqs) == 1:	# only represented by one sequence
+					print('Sample ' + str(samp) + ' has one allele for locus ' + str(this_locus_num))
+					sample_seq = SeqRecord(Seq(seqs[0]), id = samp, name = samp, description = samp)
+					seq_out_list.append(sample_seq)				
+				elif len(seqs) > 2:	# shouldn't happen
+					print('Sample ' + str(samp) + ' has more than two alleles for locus ' + str(this_locus_num))
+				else:		# normal two alleles
+					sample_seq = make_consensus(seqs, samp)
+					seq_out_list.append(sample_seq)
+			with open('locus_' + str(this_locus_num) + '.fasta', 'w') as outfile:
+				for entry in seq_out_list:
+					SeqIO.write(entry, outfile, 'fasta')
+			locus_lengths.append(len(seq_out_list[0].seq))
+			if consens:
+				text_seqs = [str(entry.seq) for entry in seq_out_list]
+				conseq = make_consensus(text_seqs, this_locus_num)
+				consensus_list.append(conseq)
 
 
 # output the consensus if requested
-with open('loci_consensus.fasta', 'w') as outfile:
-	for conseq in consensus_list:
-		SeqIO.write(conseq, outfile, 'fasta')
+if consens:
+	with open('loci_consensus.fasta', 'w') as outfile:
+		for conseq in consensus_list:
+			SeqIO.write(conseq, outfile, 'fasta')
 
 
 # summarize the results
@@ -170,7 +271,7 @@ if loci_list:
 else:
 	print('Processed ' + str(processed_loci) + ' loci and extracted ' + str(found_loci) + ' loci')
 if empty_loci > 0:
-	print('Did not export ' + str(empty_loci) + ' loci that only included excluded taxa')
+	print('Did not export ' + str(empty_loci) + ' loci that only included excluded samples')
 
 mean = sum(locus_lengths)/len(locus_lengths)
 stdev = statistics.pstdev(locus_lengths)
