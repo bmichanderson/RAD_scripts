@@ -97,17 +97,20 @@ if (run_tess) {
 
 # run sparse non-negative matrix factorization (snmf) to estimate admixture
 cat(paste0("Running snmf for ", reps,  " repetitions per K value from 1 to ", maxk, "...\n"))
-invisible(capture.output(myproject <- snmf(geno_file, K = 1: maxk, project = "new", repetitions = reps,
-	CPU = 8, entropy = TRUE, percentage = 0.2, ploidy = 2)))
+invisible(capture.output(
+	myproject <- snmf(geno_file, K = 1: maxk, project = "new", repetitions = reps,
+	CPU = 8, tolerance = 0.0000001, entropy = TRUE, iterations = 500,
+	percentage = 0.2, alpha = 10, ploidy = 2)
+))
 
 
-# plot the cross-entropy for each K to estimate an optimal K
+# plot the cross-entropy for each K to help estimate optimal K values
 pdf("cross-entropy_lea.pdf", width = 7, height = 7)
 plot(myproject, col = "#2c2a90", pch = 19)
 invisible(dev.off())
 
 
-# for each K from 2 to maxk, get the run with the lowest cross-entropy
+# for each K from 2 to maxk, find the run with the lowest cross-entropy
 for (kval in 2: maxk) {
 	bestrun <- which.min(cross.entropy(myproject, K = kval))
 	qmat <- Q(myproject, kval, bestrun)
@@ -117,8 +120,8 @@ for (kval in 2: maxk) {
 }
 
 
-# output the results for the top 10 runs per K as input to CLUMPAK
-# to use CLUMPAK, we need to construct a format it recognises (mimic Structure)
+# output the results for the top 10 runs per K as potential input to CLUMPAK
+# to use CLUMPAK, it requires a format like Structure output
 if (samples_present) {
 	sampleids <- sample_table[, 1]
 	pops <- sample_table[, 2]
@@ -156,16 +159,48 @@ if (run_tess) {
 	input_mat[input_mat == 9] <- NA
 
 	# run
-	# note: may fail if openMP is not installed on your system (in which case, delete that option)
-	cat(paste0("Running tess3 gnmf for ", reps, " repetitions per K value from 1 to ", maxk, "...\n"))
-	invisible(capture.output(tess_results <- tess3(input_mat, coord = coords, K = 1: maxk, ploidy = 2,
-		rep = reps, openMP.core.num = 8, keep = "all", mask = 0.2)))
+	# estimate the effect and choose the lambda parameter (affects the impact of spatial info)
+	cat(paste0("Running tess3 to optimise lambda...\n"))
+	lamresults <- vector("list")
+	index <- 1
+	for (lam in seq_len(15) / 10) {
+		invisible(capture.output(
+			lambda_res <- tess3(input_mat, coord = coords, ploidy = 2, K = 1: 3, lambda = lam, method = "projected.ls",
+			rep = 5, openMP.core.num = 8, keep = "all", mask = 0.2, max.iteration = 500, tolerance = 1e-07, algo.copy = FALSE)
+		))
+		lamresults[[index]] <- sum(lambda_res[[3]]$crossvalid.crossentropy) / 5
+		index <- index + 1
+	}
+	lambdas <- unlist(lamresults)
+	choose_lambda <- (seq_len(15) / 10)[which.min(lambdas)]
+	cat(paste0("Using lambda = ", choose_lambda, " based on lower cross-validation cross-entropy\n"))
+
+	# run for a range of K values
+	cat(paste0("Running tess3 for ", reps, " repetitions per K value from 1 to ", maxk, "...\n"))
+	invisible(capture.output(
+		tess_results <- tess3(input_mat, coord = coords, ploidy = 2, K = 1: maxk, lambda = choose_lambda,
+		method = "projected.ls", rep = reps, openMP.core.num = 8, keep = "all", mask = 0.2, max.iteration = 500,
+		tolerance = 1e-07, algo.copy = FALSE)
+	))
 
 	# plot the cross-validation for each K
 	pdf("cross-validation_tess.pdf", width = 7, height = 7)
-	plot(tess_results, col = "#2c2a90", pch = 19,
-		xlab = "K", ylab = "Cross-validation score",
-		main = "Cross-validation including all runs (not just the best one)")
+	plot(tess_results, crossvalid = FALSE, crossentropy = FALSE,
+		col = "#2c2a90", pch = 19,
+		xlab = "K", ylab = "Cross-validation score (RMSE)")
+	plot(tess_results, crossvalid = TRUE, crossentropy = FALSE,
+		col = "#2c2a90", pch = 19,
+		xlab = "K", ylab = "Cross-validation score (RMSE, using masked)")
+	invisible(dev.off())
+
+	# plot the cross-entropy for each K
+	pdf("cross-entropy_tess.pdf", width = 7, height = 7)
+	plot(tess_results, crossvalid = FALSE, crossentropy = TRUE,
+		col = "#2c2a90", pch = 19,
+		xlab = "K", ylab = "Cross-entropy")
+	plot(tess_results, crossvalid = TRUE, crossentropy = TRUE,
+		col = "#2c2a90", pch = 19,
+		xlab = "K", ylab = "Cross-entropy (using masked)")
 	invisible(dev.off())
 
 	# output the top 10 runs per K (based on root mean squared error, following tess3r)
@@ -191,7 +226,7 @@ if (run_tess) {
 		}
 	}
 
-	# determine the best run per K, and map the interpolation
+	# determine the best run per K, map the interpolation, and output a qfile
 	suppressMessages(library("maps"))
 	suppressMessages(library("rworldmap"))
 	# note: tess_colours needs to be at least as long as maxk
