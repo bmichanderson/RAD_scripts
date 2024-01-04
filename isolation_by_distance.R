@@ -26,6 +26,7 @@ help <- function(help_message) {
 		cat("\t-m\tFlag to run a Mantel test [default do not]\n")
 		cat("\t-r\tFlag to run a linear regression on transformed data [default do not]\n")
 		cat("\t-s\tA file with samples to include (unique names, one per line) [optional]")
+		cat("\t-z\tConvert negative genetic distances to 0 [default: do not]")
 	} else {
 		cat(help_message)
 	}
@@ -48,6 +49,7 @@ if (length(args) == 0) {
 	samples_present <- FALSE
 	run_mantel <- FALSE
 	run_regression <- FALSE
+	convert_zero <- FALSE
 	for (index in seq_len(length(args))) {
 		if (args[index] == "-o") {
 			out_pref <- args[index + 1]
@@ -66,6 +68,9 @@ if (length(args) == 0) {
 		} else if (args[index] == "-s") {
 			samples_present <- TRUE
 			sample_file <- args[index + 1]
+		} else if (args[index] == "-z") {
+			convert_zero <- TRUE
+			cat("Will convert negative distances to zero\n")
 		} else {
 			catch_args[i] <- args[index]
 			i <- i + 1
@@ -104,6 +109,12 @@ if (is.na(dist_mat[1, 2])) {	# lower triangle matrix
 	cat("Assuming square distance matrix input\n")
 }
 diag(dist_mat) <- NA
+
+
+# convert negative distances to zeros, if requested
+if (convert_zero) {
+	dist_mat[dist_mat < 0] <- 0
+}
 
 
 # calculate pairwise geographic distances and store as a matrix
