@@ -164,6 +164,9 @@ invisible(dev.off())
 
 # output the Fst matrix if it was sorted
 if (pops_present) {
+	myfsts <- myfsts[, seq(ncol(myfsts), 1)]
+	myfsts[lower.tri(myfsts)] <- t(myfsts)[lower.tri(myfsts)]
+	myfsts[upper.tri(myfsts)] <- NA
 	write.table(myfsts, file = paste0(out_pref, "_sorted_Fst.txt"),
 		quote = FALSE, row.names = TRUE)
 }
