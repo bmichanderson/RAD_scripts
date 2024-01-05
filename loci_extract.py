@@ -222,12 +222,12 @@ with open(loci_file, 'r') as locfile:
 				if loci_list:
 					if locus_num in locus_nums:		# a target locus
 						if samp_list:
-							if sample not in samp_list:		# a desirable sample
+							if sample not in samp_names:		# a desirable sample
 								seq_list.append([sample, line.strip()])
 						else:
 							seq_list.append([sample, line.strip()])
 				elif samp_list:
-					if sample not in samp_list:
+					if sample not in samp_names:
 						seq_list.append([sample, line.strip()])
 				else:
 					seq_list.append([sample, line.strip()])
