@@ -21,6 +21,7 @@ Load libraries and read input
 suppressMessages(library(ape))
 suppressMessages(library(phytools))
 treefile <- "phylo.treefile"
+concord_treefile <- "concord_scf.tre"
 outgroup_file <- "outgroup.txt"
 clade_file <- "clades.txt"
 ```
@@ -66,18 +67,30 @@ if (file.exists(outgroup_file)) {
 If using site concordance factors, capture them as a dataframe  
 (This works if captured with my `concord_to_newick.py` script: "sCF/sDF1/sDF2")
 ```{r}
-concord_df <- data.frame(matrix(ncol = 3, nrow = tree$Nnode))
-index <- 1
-for (label in tree$node.label) {
-	if (any(label == "", label == "Root")) {
-		values <- c("", "", "")
-	} else {
-		values <- strsplit(label, split = "\\/")[[1]]
+if (file.exists(concord_treefile)) {
+	concord_tree <- read.tree(concord_treefile)
+	# if an outroup is present, root this tree too
+	if (file.exists(outgroup_file)) {
+		outgroups <- read.table(outgroup_file)[, 1]
+		these_outgroups <- outgroups[outgroups %in% concord_tree$tip.label]
+		rootnode <- getMRCA(concord_tree, as.character(these_outgroups))
+		position <- 0.5 * concord_tree$edge.length[which(concord_tree$edge[, 2] == rootnode)]
+		rooted_tree <- reroot(concord_tree, rootnode, position, edgelabel = TRUE)
+		concord_tree <- rooted_tree
 	}
-	concord_df[index, 1:3] <- values
-	index <- index + 1
+	concord_df <- data.frame(matrix(ncol = 3, nrow = concord_tree$Nnode))
+	index <- 1
+	for (label in concord_tree$node.label) {
+		if (any(label == "", label == "Root")) {
+			values <- c("", "", "")
+		} else {
+			values <- strsplit(label, split = "\\/")[[1]]
+		}
+		concord_df[index, 1:3] <- values
+		index <- index + 1
+	}
+	concord_df <- as.data.frame(lapply(concord_df, as.numeric))
 }
-concord_df <- as.data.frame(lapply(concord_df, as.numeric))
 ```
 
 
@@ -123,7 +136,7 @@ If desired and present, plot site concordance factors as pie charts on nodes
 concord_df[which(concord_df[, 1] == 0 & concord_df[, 2] == 0 & concord_df[, 3] == 0), ] <- c(NA, NA, NA)
 nodelabels(pie = concord_df,
 	piecol = c("white", "grey", "black"),
-	cex = 1)
+	cex = 0.5)
 ```
 
 Stop creating the PDF
