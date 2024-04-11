@@ -2,7 +2,7 @@
 ##########
 # Author: Ben Anderson
 # Date: Mar 2022
-# Modified: Oct 2023 (changed orientation and legend)
+# Modified: Oct 2023 (changed orientation and legend); Apr 2024 (corrected legend)
 # Description: create a population heatmap based on an input Fst matrix
 ##########
 
@@ -63,7 +63,8 @@ heatmapper <- function(fstmat, palette = "greens", ...) {
 	axis(side = 4, at = legend_seq / range_max, pos = 1, labels = FALSE,
 		col = 0, col.ticks = 1)
 	mtext(legend_labels, side = 4, line = -0.5, at = legend_seq / range_max, las = 2)
-	rasterImage(legend_colours, xleft = 0, ybottom = 0, xright = 1, ytop = 1)
+	rasterImage(legend_colours, xleft = 0, ybottom = range_min / range_max,
+		xright = 1, ytop = 1)
 	par(op)
 }
 
