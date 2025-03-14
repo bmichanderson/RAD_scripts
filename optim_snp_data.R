@@ -1,12 +1,15 @@
 ##########
-# Author: B. Anderson
-# Date: Nov-Dec 2023
+# Author: B.M. Anderson
+# Date: Nov–Dec 2023; Mar 2025 (adding fasta input)
 # Description: evaluate multiple SNP datasets to optimise assembly parameters
 # Note: the minimum arguments are multiple VCF files (one per parameter combination)
-#	It is helpful to also indicate the association between the files and the parameter values (-p),
-#	specify which sample IDs are replicate pairs (-r), a samples and populations file to limit which
-#	to analyse (-s), as well as a custom stats file from ipyrad (if you used that) for autosomal output (-i)
-# Note2: this script relies on genlight objects, which only uses biallelic SNPs (may underestimate heterozygosity)
+#	Optionally, provide text files to:
+#	indicate the association between the files and the parameter values (-p), one label per line;
+#	specify which sampleIDs are replicate pairs (-r), tab-separated and one per line;
+#	limit analysis to specific sampleIDs and populations (-s), tab-separated and one per line;
+#	analyse a custom stats file from ipyrad (if you used that) for autosomal heterozygosity output (-i)
+#	calculate autosomal heterozygosity from alignments, one fasta filename per line (-f)
+# Note: this script relies on genlight objects, which only use biallelic SNPs (so may underestimate SNP heterozygosity)
 ##########
 
 
@@ -25,14 +28,15 @@ help <- function(help_message) {
 		cat("Usage: Rscript optim_snp_data.R <optional args> VCF_file1 VCF_file2 ...\n")
 		cat("Arguments:\n")
 		cat("\t...\tPaths to VCF files in the order for plotting/comparing (e.g. sequentially increasing)\n")
+		cat("\t-f\tA file with names of fasta files corresponding to the VCF files, one per line\n")
 		cat("\t-i\tA custom-formatted ipyrad stats file with a header and columns containing specific values:\n")
 		cat("\t\tcolumn1 = sample ID; column2 = clustering threshold; column3 = autosomal heterozygosity\n")
 		cat("\t-o\tOutput prefix [default: \"out\"]\n")
 		cat("\t-p\tA text file with parameter values for each input VCF in the order provided,",
 			"one per line (e.g. \"85\" or \"M2\")\n")
-		cat("\t\tIf not provided, the parameter values will be displayed arbitrarily\n")
-		cat("\t-r\tA text file with sample IDs of replicate pairs (tab separated, one per line)\n")
-		cat("\t-s\tA text file with sample IDs and populations (tab separated, one per line)\n")
+		cat("\t\tIf not provided, the parameter values will be arbitrary\n")
+		cat("\t-r\tA text file with sampleIDs of replicate pairs (tab separated, one per line)\n")
+		cat("\t-s\tA text file with sampleIDs and populations (tab separated, one per line)\n")
 		cat("\t\tIf a samples file is provided, only those specified samples will be analysed\n")
 	} else {
 		cat(help_message)
@@ -40,8 +44,9 @@ help <- function(help_message) {
 }
 
 
-## a function to compute the number of loci shared by >=80% of samples
+## a function to compute the number of loci shared by >= 80% of samples
 ## -- based on the metric used in Paris et al. (2017) --
+## argument is a genlight object
 ## returns a number
 paris <- function(genl) {
 	mat <- as.matrix(genl)
@@ -53,7 +58,7 @@ paris <- function(genl) {
 
 ## a function to run error rate assessments
 ## -- based on metrics used in Mastretta-Yanes et al. (2015) --
-## arguments are a genlight and a table with the replicate pair sampleIDs, one pair per row (2 columns)
+## arguments are a genlight object and a table with the replicate pair sampleIDs, one pair per row (2 columns)
 ## returns a matrix with columns corresponding to locus, allele and snp error rates
 mastretta_error <- function(genl, reps) {
 	errors <- matrix(nrow = nrow(reps), ncol = 3)
@@ -99,8 +104,9 @@ mastretta_error <- function(genl, reps) {
 }
 
 
-## a function to calculate within-population distances
+## a function to calculate within-population genetic distances
 ## -- based on the suggestion in Mastretta-Yanes et al. (2015) --
+## arguments are a vcfR object, a vector of sampleIDs and a corresponding vector of pop names
 ## returns a vector of average distances
 pop_dist <- function(vcfr, sampleids, pops) {
 	### load libraries
@@ -134,11 +140,25 @@ pop_dist <- function(vcfr, sampleids, pops) {
 }
 
 
-## a function to calculate heterozygosity
+## a function to calculate SNP heterozygosity
+## argument is a genlight object
 ## returns a dataframe with the observed heterozygosity for all samples
 het_est <- function(genl) {
 	comp_mat <- as.matrix(genl)
 	as.data.frame(rowSums(comp_mat == 1, na.rm = TRUE) / (ncol(comp_mat) - rowSums(is.na(comp_mat))))
+}
+
+
+## a function to calculate observed heterozygosity across sites
+## this is the proportion of sites that are hets (ambiguities)
+het_measure <- function(x) {
+	y <- x[!is.na(x)]		# only account for non NA
+	mylen <- length(y)
+	if (mylen == 0) {
+		NA
+	} else {
+		sum(! y %in% c("a", "c", "g", "t")) / mylen
+	}
 }
 
 
@@ -147,49 +167,56 @@ het_est <- function(genl) {
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) == 0) {
 	stop(help(), call. = FALSE)
-} else {
-	catch_args <- vector("list")
-	extra <- 1
-	catch <- TRUE
-	ipyrad_present <- FALSE
-	ipyrad_file <- ""
-	out_pref <- "out"
-	params_present <- FALSE
-	params_file <- ""
-	reps_present <- FALSE
-	reps_file <- ""
-	samples_present <- FALSE
-	samples_file <- ""
-	for (index in seq_len(length(args))) {
-		if (args[index] == "-i") {
-			ipyrad_present <- TRUE
-			ipyrad_file <- args[index + 1]
-			catch <- FALSE
-		} else if (args[index] == "-o")  {
-			out_pref <- args[index + 1]
-			catch <- FALSE
-		} else if (args[index] == "-p")  {
-			params_present <- TRUE
-			params_file <- args[index + 1]
-			catch <- FALSE
-		} else if (args[index] == "-r")  {
-			reps_present <- TRUE
-			reps_file <- args[index + 1]
-			catch <- FALSE
-		} else if (args[index] == "-s")  {
-			samples_present <- TRUE
-			samples_file <- args[index + 1]
-			catch <- FALSE
+}
+
+catch_args <- vector("list")
+extra <- 1
+catch <- TRUE
+ipyrad_present <- FALSE
+ipyrad_file <- ""
+out_pref <- "out"
+params_present <- FALSE
+params_file <- ""
+reps_present <- FALSE
+reps_file <- ""
+samples_present <- FALSE
+samples_file <- ""
+fasta_present <- FALSE
+fasta_file <- ""
+for (index in seq_len(length(args))) {
+	if (args[index] == "-i") {
+		ipyrad_present <- TRUE
+		ipyrad_file <- args[index + 1]
+		catch <- FALSE
+	} else if (args[index] == "-o")  {
+		out_pref <- args[index + 1]
+		catch <- FALSE
+	} else if (args[index] == "-p")  {
+		params_present <- TRUE
+		params_file <- args[index + 1]
+		catch <- FALSE
+	} else if (args[index] == "-r")  {
+		reps_present <- TRUE
+		reps_file <- args[index + 1]
+		catch <- FALSE
+	} else if (args[index] == "-s")  {
+		samples_present <- TRUE
+		samples_file <- args[index + 1]
+		catch <- FALSE
+	} else if (args[index] == "-f") {
+		fasta_present <- TRUE
+		fasta_file <- args[index + 1]
+		catch <- FALSE
+	} else {
+		if (catch) {
+			catch_args[extra] <- args[index]
+			extra <- extra + 1
 		} else {
-			if (catch) {
-				catch_args[extra] <- args[index]
-				extra <- extra + 1
-			} else {
-				catch <- TRUE
-			}
+			catch <- TRUE
 		}
 	}
 }
+
 if (length(catch_args) < 2) {
 	stop(help("Missing VCF files!\n"), call. = FALSE)
 }
@@ -199,7 +226,7 @@ if (length(catch_args) < 2) {
 if (ipyrad_present) {
 	het_stats <- read.table(ipyrad_file, sep = "\t", header = TRUE)
 } else {
-	cat("No ipyrad file detected, so calculating heterozygosity only from SNPs\n")
+	cat("No ipyrad file detected, so calculating heterozygosity only from SNPs and/or fasta files\n")
 }
 
 if (params_present) {
@@ -218,9 +245,15 @@ if (reps_present) {
 if (samples_present) {
 	samples_table <- read.table(samples_file, sep = "\t", header = FALSE)
 	sampleids <- as.character(samples_table[, 1])
-	pops <- as.character(samples_table[, 2])		# corresponding sequence to samples (not unique)
+	pops <- as.character(samples_table[, 2])		# in same order as samples (not unique)
 } else {
 	cat("No samples file detected, so skipping population metrics and using all samples\n")
+}
+
+if (fasta_present) {
+	fastas <- as.character(read.table(fasta_file, header = FALSE)[, 1])
+} else {
+	cat("No fasta files designated, so skipping fasta heterozygosity calculations\n")
 }
 
 
@@ -238,11 +271,13 @@ dists_pop <- matrix(ncol = 2)
 colnames(dists_pop) <- c("param", "dist")
 het_obs <- matrix(ncol = 3)
 colnames(het_obs) <- c("sample", "param", "het")
+het_fas <- matrix(ncol = 3)
+colnames(het_fas) <- c("sample", "param", "het")
 
 ## cycle through the VCF files
 index <- 1
 for (vcf_file in catch_args) {
-	cat(paste0("\nProcessing file ", as.character(index), " of ", as.character(length(catch_args)), "...\n"))
+	cat(paste0("\nProcessing VCF file ", as.character(index), " of ", as.character(length(catch_args)), "...\n"))
 	vcfr <- read.vcfR(vcf_file, verbose = FALSE)
 	genl <- suppressWarnings(vcfR2genlight(vcfr))
 	cat(paste0("Read in and converted the VCF to a genlight with ", nInd(genl), " samples, ",
@@ -350,6 +385,37 @@ for (vcf_file in catch_args) {
 	index <- index + 1
 }
 
+## if fasta files are present, cycle through them
+if (fasta_present) {
+	suppressMessages(library(ape))
+	index <- 1
+	for (fasta_file in fastas) {
+		cat(paste0("\nProcessing fasta file ", as.character(index), " of ", as.character(length(fastas)), "...\n"))
+		fasta <- read.dna(fasta_file, format = "fasta")
+
+		## convert to matrix and correct the DNA so that missing data is coded as NA
+		mymat <- as.matrix(as.character(fasta))
+		mymat[mymat == "?"] <- NA
+		mymat[mymat == "n"] <- NA
+		mymat[mymat == "-"] <- NA
+
+		## calculate observed autosomal heterozygosity
+		hets <- apply(mymat, 1, het_measure)
+		het_df <- as.data.frame(hets)
+		out_mat <- as.matrix(cbind(rownames(het_df),
+			rep(params[index], nrow(het_df)),
+			het_df[, 1]))
+		if (index == 1) {
+			het_fas <- out_mat
+		} else {
+			het_fas <- rbind(het_fas, out_mat)
+		}
+
+		## increment
+		index <- index + 1
+	}
+}
+
 
 ##########
 # save the results to text files
@@ -359,6 +425,9 @@ write.table(error_mat, file = paste0(out_pref, "_error.tab"), quote = FALSE, row
 write.table(het_obs, file = paste0(out_pref, "_snphet.tab"), quote = FALSE, row.names = FALSE, sep = "\t")
 if (samples_present) {
 	write.table(dists_pop, file = paste0(out_pref, "_distspop.tab"), quote = FALSE, row.names = FALSE, sep = "\t")
+}
+if (fasta_present) {
+	write.table(het_fas, file = paste0(out_pref, "_fastahet.tab"), quote = FALSE, row.names = FALSE, sep = "\t")
 }
 
 
@@ -392,7 +461,7 @@ axis(1, at = seq_len(nrow(paris_mat)), labels = paris_mat[, 1])
 if (ipyrad_present) {
 	boxplot(as.numeric(het_stats[, 3]) * 100 ~ het_stats[, 2],
 		ylim = c(0, max(as.numeric(het_stats[, 3]) * 100) * 1.05),
-		main = "Autosomal heterozygosity\n(ambiguous bases in consensus sequences within samples)",
+		main = "Autosomal heterozygosity (ipyrad stats)\n(ambiguous bases in consensus sequences within samples)",
 		ylab = "Heterozygous sites (%)", xlab = "Clustering threshold (%)")
 	boxplot(as.numeric(het_obs[, 3]) * 100 ~ het_obs[, 2],
 		ylim = c(0, max(as.numeric(het_obs[, 3]) * 100) * 1.05),
@@ -402,6 +471,12 @@ if (ipyrad_present) {
 	boxplot(as.numeric(het_obs[, 3]) * 100 ~ het_obs[, 2],
 		ylim = c(0, max(as.numeric(het_obs[, 3]) * 100) * 1.05),
 		main = "Observed SNP heterozygosity",
+		ylab = "Heterozygosity (%)", xlab = "")
+}
+if (fasta_present) {
+	boxplot(as.numeric(het_fas[, 3]) * 100 ~ het_fas[, 2],
+		ylim = c(0, max(as.numeric(het_fas[, 3]) * 100) * 1.05),
+		main = "Observed autosomal heterozygosity (fasta file)",
 		ylab = "Heterozygosity (%)", xlab = "")
 }
 
