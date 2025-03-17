@@ -1,6 +1,7 @@
 ##########
 # Author: B.M. Anderson
-# Date: Nov–Dec 2023; Mar 2025 (adding fasta input)
+# Date: Nov–Dec 2023
+# Modified: Mar 2025 (added fasta input; updated Paris to use polymorphic loci and also per population)
 # Description: evaluate multiple SNP datasets to optimise assembly parameters
 # Note: the minimum arguments are multiple VCF files (one per parameter combination)
 #	Optionally, provide text files to:
@@ -44,12 +45,15 @@ help <- function(help_message) {
 }
 
 
-## a function to compute the number of loci shared by >= 80% of samples
+## a function to compute the number of polymorphic loci shared by >= 80% of samples
 ## -- based on the metric used in Paris et al. (2017) --
 ## argument is a genlight object
 ## returns a number
 paris <- function(genl) {
+	len_unique <- function(x) length(unique(x[! is.na(x)]))
 	mat <- as.matrix(genl)
+	keep_cols <- apply(mat, 2, len_unique) > 1
+	mat <- mat[, keep_cols]
 	keep_snps <- colSums(! is.na(mat)) / nrow(mat) >= 0.80
 	sub_genl <- genl[, keep_snps]
 	length(unique(sub_genl@chromosome))
@@ -265,6 +269,8 @@ size_mat <- matrix(ncol = 3)
 colnames(size_mat) <- c("param", "num_loci", "num_snps")
 paris_mat <- matrix(ncol = 2)
 colnames(paris_mat) <- c("param", "num_loci")
+paris_pop_mat <- matrix(ncol = 2)
+colnames(paris_pop_mat) <- c("param", "num_loci")
 error_mat <- matrix(ncol = 4)
 colnames(error_mat) <- c("param", "locus_err", "allele_err", "snp_err")
 dists_pop <- matrix(ncol = 2)
@@ -339,12 +345,34 @@ for (vcf_file in catch_args) {
 	}
 
 	## calculate Paris
-	cat("Assessing how many loci are shared by at least 80% of samples\n")
+	cat("Assessing how many polymorphic loci are shared by at least 80% of samples\n")
 	paris_num <- paris(genl)
 	if (index == 1) {
 		paris_mat[1, ] <- c(params[index], paris_num)
 	} else {
 		paris_mat <- rbind(paris_mat, c(params[index], paris_num))
+	}
+	if (samples_present) {
+		cat("Also assessing polymorphic loci shared by at least 80% of samples per population\n")
+		paris_pop_counts <- vector()
+		pop_names <- unique(keep_pops)
+		pop_index <- 1
+		for (pop in pop_names) {
+			samples <- keep_samples[keep_pops == pop]
+			if (length(samples) > 1) {
+				subgenl <- genl[match(samples, genl@ind.names)]
+				paris_num_pop <- paris(subgenl)
+				paris_pop_counts[pop_index] <- paris_num_pop
+				pop_index <- pop_index + 1
+			}
+		}
+		out_mat <- as.matrix(cbind(rep(params[index], length(paris_pop_counts)),
+			paris_pop_counts))
+		if (index == 1) {
+			paris_pop_mat <- out_mat
+		} else {
+			paris_pop_mat <- rbind(paris_pop_mat, out_mat)
+		}
 	}
 
 	## calculate heterozygosity
@@ -425,6 +453,7 @@ write.table(error_mat, file = paste0(out_pref, "_error.tab"), quote = FALSE, row
 write.table(het_obs, file = paste0(out_pref, "_snphet.tab"), quote = FALSE, row.names = FALSE, sep = "\t")
 if (samples_present) {
 	write.table(dists_pop, file = paste0(out_pref, "_distspop.tab"), quote = FALSE, row.names = FALSE, sep = "\t")
+	write.table(paris_pop_mat, file = paste0(out_pref, "_paris_pops.tab"), quote = FALSE, row.names = FALSE, sep = "\t")
 }
 if (fasta_present) {
 	write.table(het_fas, file = paste0(out_pref, "_fastahet.tab"), quote = FALSE, row.names = FALSE, sep = "\t")
@@ -452,10 +481,16 @@ axis(1, at = seq_len(nrow(size_mat)), labels = size_mat[, 1])
 
 ## Paris
 plot(NULL, xlim = c(1, nrow(paris_mat)), ylim = c(0, max(as.numeric(paris_mat[, 2])) * 1.05),
-	main = "Total number of loci recovered in >= 80% of individuals",
+	main = "Number of polymorphic loci recovered in >= 80% of all samples",
 	xaxt = "n", ylab = "Number of loci", xlab = "")
 points(seq_len(nrow(paris_mat)), as.numeric(paris_mat[, 2]), pch = 16)
 axis(1, at = seq_len(nrow(paris_mat)), labels = paris_mat[, 1])
+if (samples_present) {
+	boxplot(as.numeric(paris_pop_mat[, 2]) ~ paris_pop_mat[, 1],
+		main = "Number of polymorphic loci recovered in >= 80% of samples within each population",
+		ylim = c(0, max(as.numeric(paris_pop_mat[, 2]), na.rm = TRUE) * 1.05),
+		ylab = "Number of loci", xlab = "")
+}
 
 ## heterozygosity
 if (ipyrad_present) {
