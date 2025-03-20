@@ -1,7 +1,7 @@
 ##########
 # Author: B.M. Anderson
 # Date: Nov–Dec 2023
-# Modified: Mar 2025 (added fasta input; updated Paris to use polymorphic loci and also per population)
+# Modified: Mar 2025 (added fasta input; updated Paris for polymorphic loci and per population; adjusted plotting)
 # Description: evaluate multiple SNP datasets to optimise assembly parameters
 # Note: the minimum arguments are multiple VCF files (one per parameter combination)
 #	Optionally, provide text files to:
@@ -464,6 +464,9 @@ if (fasta_present) {
 # plot
 cat("\nPlotting...\n")
 
+# adjust margins to fit custom labels on x-axis
+par(mar = c(7, 4, 4, 1) + 0.1)
+
 ## start the pdf
 pdf(paste0(out_pref, "_optim.pdf"), width = 10, height = 10)
 
@@ -472,24 +475,40 @@ plot(NULL, xlim = c(1, nrow(size_mat)), ylim = c(0, max(as.numeric(size_mat[, 2]
 	main = "Total number of loci recovered",
 	xaxt = "n", ylab = "Number of loci", xlab = "")
 points(seq_len(nrow(size_mat)), as.numeric(size_mat[, 2]), pch = 16)
-axis(1, at = seq_len(nrow(size_mat)), labels = size_mat[, 1])
+axis(1, at = seq_len(nrow(size_mat)), labels = FALSE)
+labels <- size_mat[, 1]
+yrange <- max(as.numeric(size_mat[, 2])) * 1.05
+text(seq_len(nrow(size_mat)), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
+	labels = labels, xpd = TRUE)
 plot(NULL, xlim = c(1, nrow(size_mat)), ylim = c(0, max(as.numeric(size_mat[, 3])) * 1.05),
 	main = "Total number of biallelic SNPs recovered",
 	xaxt = "n", ylab = "Number of biallelic SNPs", xlab = "")
 points(seq_len(nrow(size_mat)), as.numeric(size_mat[, 3]), pch = 16)
-axis(1, at = seq_len(nrow(size_mat)), labels = size_mat[, 1])
+axis(1, at = seq_len(nrow(size_mat)), labels = FALSE)
+yrange <- max(as.numeric(size_mat[, 3])) * 1.05
+text(seq_len(nrow(size_mat)), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
+	labels = labels, xpd = TRUE)
 
 ## Paris
 plot(NULL, xlim = c(1, nrow(paris_mat)), ylim = c(0, max(as.numeric(paris_mat[, 2])) * 1.05),
 	main = "Number of polymorphic loci recovered in >= 80% of all samples",
 	xaxt = "n", ylab = "Number of loci", xlab = "")
 points(seq_len(nrow(paris_mat)), as.numeric(paris_mat[, 2]), pch = 16)
-axis(1, at = seq_len(nrow(paris_mat)), labels = paris_mat[, 1])
+labels <- paris_mat[, 1]
+yrange <- max(as.numeric(paris_mat[, 2])) * 1.05
+axis(1, at = seq_len(nrow(paris_mat)), labels = FALSE)
+text(seq_len(nrow(paris_mat)), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
+	labels = labels, xpd = TRUE)
 if (samples_present) {
 	boxplot(as.numeric(paris_pop_mat[, 2]) ~ paris_pop_mat[, 1],
 		main = "Number of polymorphic loci recovered in >= 80% of samples within each population",
 		ylim = c(0, max(as.numeric(paris_pop_mat[, 2]), na.rm = TRUE) * 1.05),
-		ylab = "Number of loci", xlab = "")
+		ylab = "Number of loci", xlab = "", xaxt = "n")
+	labels <- unique(paris_pop_mat[, 1])
+	yrange <- max(as.numeric(paris_pop_mat[, 2])) * 1.05
+	axis(1, at = seq_len(length(unique(paris_pop_mat[, 1]))), labels = FALSE)
+	text(seq_len(length(unique((paris_mat[, 1])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
+		labels = labels, xpd = TRUE)
 }
 
 ## heterozygosity
@@ -497,22 +516,42 @@ if (ipyrad_present) {
 	boxplot(as.numeric(het_stats[, 3]) * 100 ~ het_stats[, 2],
 		ylim = c(0, max(as.numeric(het_stats[, 3]) * 100) * 1.05),
 		main = "Autosomal heterozygosity (ipyrad stats)\n(ambiguous bases in consensus sequences within samples)",
-		ylab = "Heterozygous sites (%)", xlab = "Clustering threshold (%)")
+		ylab = "Heterozygous sites (%)", xlab = "", xaxt = "n")
+	labels <- unique(het_stat[, 2])
+	yrange <- max(as.numeric(het_stats[, 3]) * 100) * 1.05
+	axis(1, at = seq_len(length(unique(het_stat[, 2]))), labels = FALSE)
+	text(seq_len(length(unique((het_stat[, 2])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
+		labels = labels, xpd = TRUE)
 	boxplot(as.numeric(het_obs[, 3]) * 100 ~ het_obs[, 2],
 		ylim = c(0, max(as.numeric(het_obs[, 3]) * 100) * 1.05),
 		main = "Observed SNP heterozygosity",
-		ylab = "Heterozygosity (%)", xlab = "")
+		ylab = "Heterozygosity (%)", xlab = "", xaxt = "n")
+	labels <- unique(het_obs[, 2])
+	yrange <- max(as.numeric(het_obs[, 3]) * 100) * 1.05
+	axis(1, at = seq_len(length(unique(het_obs[, 2]))), labels = FALSE)
+	text(seq_len(length(unique((het_obs[, 2])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
+		labels = labels, xpd = TRUE)
 } else {
 	boxplot(as.numeric(het_obs[, 3]) * 100 ~ het_obs[, 2],
 		ylim = c(0, max(as.numeric(het_obs[, 3]) * 100) * 1.05),
 		main = "Observed SNP heterozygosity",
-		ylab = "Heterozygosity (%)", xlab = "")
+		ylab = "Heterozygosity (%)", xlab = "", xaxt = "n")
+	labels <- unique(het_obs[, 2])
+	yrange <- max(as.numeric(het_obs[, 3]) * 100) * 1.05
+	axis(1, at = seq_len(length(unique(het_obs[, 2]))), labels = FALSE)
+	text(seq_len(length(unique((het_obs[, 2])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
+		labels = labels, xpd = TRUE)
 }
 if (fasta_present) {
 	boxplot(as.numeric(het_fas[, 3]) * 100 ~ het_fas[, 2],
 		ylim = c(0, max(as.numeric(het_fas[, 3]) * 100) * 1.05),
 		main = "Observed autosomal heterozygosity (fasta file)",
-		ylab = "Heterozygosity (%)", xlab = "")
+		ylab = "Heterozygosity (%)", xlab = "", xaxt = "n")
+	labels <- unique(het_fas[, 2])
+	yrange <- max(as.numeric(het_fas[, 3]) * 100) * 1.05
+	axis(1, at = seq_len(length(unique(het_fas[, 2]))), labels = FALSE)
+	text(seq_len(length(unique((het_fas[, 2])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
+		labels = labels, xpd = TRUE)
 }
 
 ## error
@@ -521,15 +560,28 @@ if (reps_present) {
 		main = paste0("Locus error rates\n",
 			"(loci present in one rep but not the other, relative to total in either/both)"),
 		ylim = c(0, max(as.numeric(error_mat[, 2])) * 1.05),
-		ylab = "Locus error rate (%)", xlab = "")
+		ylab = "Locus error rate (%)", xlab = "", xaxt = "n")
+	labels <- unique(error_mat[, 1])
+	yrange <- max(as.numeric(error_mat[, 2])) * 1.05
+	axis(1, at = seq_len(length(unique(error_mat[, 1]))), labels = FALSE)
+	text(seq_len(length(unique((error_mat[, 1])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
+		labels = labels, xpd = TRUE)
 	boxplot(as.numeric(error_mat[, 3]) ~ error_mat[, 1],
 		main = "Allele error rates\n(loci present in both that differ in sequence, relative to total in both)",
 		ylim = c(0, max(as.numeric(error_mat[, 3])) * 1.05),
-		ylab = "Allele error rate (%)", xlab = "")
+		ylab = "Allele error rate (%)", xlab = "", xaxt = "n")
+	axis(1, at = seq_len(length(unique(error_mat[, 1]))), labels = FALSE)
+	yrange <- max(as.numeric(error_mat[, 3])) * 1.05
+	text(seq_len(length(unique((error_mat[, 1])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
+		labels = labels, xpd = TRUE)
 	boxplot(as.numeric(error_mat[, 4]) ~ error_mat[, 1],
 		main = "SNP error rates\n(SNPs called in both that differ, relative to total called in both)",
 		ylim = c(0, max(as.numeric(error_mat[, 4])) * 1.05),
-		ylab = "SNP error rate (%)", xlab = "")
+		ylab = "SNP error rate (%)", xlab = "", xaxt = "n")
+	axis(1, at = seq_len(length(unique(error_mat[, 1]))), labels = FALSE)
+	yrange <- max(as.numeric(error_mat[, 4])) * 1.05
+	text(seq_len(length(unique((error_mat[, 1])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
+		labels = labels, xpd = TRUE)
 }
 
 ## within population distances
@@ -537,7 +589,12 @@ if (samples_present) {
 	boxplot(as.numeric(dists_pop[, 2]) ~ dists_pop[, 1],
 		main = "Within Population Genetic Distances",
 		ylim = c(0, max(as.numeric(dists_pop[, 2]), na.rm = TRUE) * 1.05),
-		ylab = "Average GENPOFAD distance", xlab = "")
+		ylab = "Average GENPOFAD distance", xlab = "", xaxt = "n")
+	labels <- unique(dists_pop[, 1])
+	yrange <- max(as.numeric(dists_pop[, 2]), na.rm = TRUE) * 1.05
+	axis(1, at = seq_len(length(unique(dists_pop[, 1]))), labels = FALSE)
+	text(seq_len(length(unique((dists_pop[, 1])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
+		labels = labels, xpd = TRUE)
 }
 
 ## stop the pdf
