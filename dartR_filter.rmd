@@ -306,7 +306,8 @@ gl.pcoa.plot(pca, filtered_genl, pop.labels = "pop",
 cat(paste0("Plotting a PCA based on ", snps_remain, " SNPs\n"))
 ```
 
-Or, use custom plotting (depends on pop being labeled with underscore before group, e.g. pop1_sp1)
+Or, use custom plotting (depends on pop being labeled with underscore before group, e.g. pop1_sp1)  
+First set colour palette and points depending on number of groups (four or two)
 ```{r}
 # colour palette and point choices for number of groups/taxa
 col_pal <- c("#d433da",
@@ -315,6 +316,15 @@ col_pal <- c("#d433da",
 	"#ff2e38"
 )
 point_ch <- c(22, 21, 24, 23)
+```
+```{r}
+# colour palette and point choices for number of groups/taxa
+col_pal <- c("#0062ff",
+	"#218a21"
+)
+point_ch <- c(21, 24)
+```
+```{r}
 # get groups
 groups <- vector()
 for (entry in filtered_genl$pop) {
@@ -336,7 +346,7 @@ plot_pca <- function(pca, numsnps, colours, points, x = 1, y = 2) {
 	# grab elements
 	pca_var <- round(100 * pca$eig / sum(pca$eig), digits = 1)
 	method <- paste0("glPca (", numsnps, " SNPs)")
-	pca_scores <- pca$scores[order(rownames(pca$scores)), ]
+	pca_scores <- pca$scores
 	# plot
 	par(mar = c(5.1, 6.1, 5.1, 2.1), cex.lab = 2)
 	plot(pca_scores[, x], pca_scores[, y],
@@ -358,7 +368,7 @@ plot_pca <- function(pca, numsnps, colours, points, x = 1, y = 2) {
 	par(mar = c(5.1, 4.1, 4.1, 2.1), cex.lab = 1)
 }
 ```
-Run the plotting for four groups
+Run the plotting
 ```{r}
 num_snps <- nLoc(filtered_genl)
 plot_pca(pca, num_snps, colours, points, x = 1, y = 2)
@@ -368,23 +378,13 @@ plot_pca(pca, num_snps, colours, points, x = 2, y = 3)
 plot_pca(pca, num_snps, colours, points, x = 2, y = 4)
 plot_pca(pca, num_snps, colours, points, x = 3, y = 4)
 ```
-Or two
-```{r}
-num_snps <- nLoc(filtered_genl)
-plot_pca(pca, num_snps, colours[2: 3], points[2: 3], x = 1, y = 2)
-plot_pca(pca, num_snps, colours[2: 3], points[2: 3], x = 1, y = 3)
-plot_pca(pca, num_snps, colours[2: 3], points[2: 3], x = 1, y = 4)
-plot_pca(pca, num_snps, colours[2: 3], points[2: 3], x = 2, y = 3)
-plot_pca(pca, num_snps, colours[2: 3], points[2: 3], x = 2, y = 4)
-plot_pca(pca, num_snps, colours[2: 3], points[2: 3], x = 3, y = 4)
-```
 Plot a legend
 ```{r}
 groupdf <- data.frame(cbind(groups, colours, points))
 leg_df <- unique(groupdf[order(groupdf[, 1]), ])
 plot(1, type = "n", axes = FALSE, xlab = "", ylab = "")
 legend("center", legend = leg_df[, 1],
-	pch = leg_df[, 3], pt.bg = leg_df[, 2],
+	pch = as.numeric(leg_df[, 3]), pt.bg = leg_df[, 2],
 	col = "black", title = NULL, cex = 1.5,
 	pt.cex = 2, pt.lwd = 0.25)
 ```
@@ -433,8 +433,8 @@ for (pop in pops) {
 	levels(strgenl$pop)[match(pop, levels(strgenl$pop))] <- index
 	index <- index + 1
 }
-gl2structure(strgenl, outfile = "filtered.str", addcolumns = strgenl$pop,
-	exportMarkerNames = FALSE, outpath = ".")
+gl2structure(strgenl, outfile = "filtered.str", add.columns = strgenl$pop,
+	export.marker.names = FALSE, outpath = ".")
 coding <- cbind(strgenl$ind.names, strgenl$pop)
 write.table(coding[order(as.numeric(coding[, 2])), ], file = "filtered_str_pops.txt",
 	row.names = FALSE, col.names = FALSE, quote = FALSE)
