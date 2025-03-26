@@ -102,7 +102,7 @@ with open(loci_file, 'r') as locfile:
 						if len(this_locus) > 0:
 							with open('locus_' + str(locus_num) + '.fasta', 'w') as outfile:
 								for entry in this_locus:
-									outfile.write(entry, outfile, 'fasta')
+									SeqIO.write(entry, outfile, 'fasta')
 							locus_lengths.append(len(this_locus[0].seq))
 							if consens:
 								seqs = [entry.seq for entry in this_locus]
@@ -115,7 +115,7 @@ with open(loci_file, 'r') as locfile:
 					if len(this_locus) > 0:
 						with open('locus_' + str(locus_num) + '.fasta', 'w') as outfile:
 							for entry in this_locus:
-								outfile.write(entry, outfile, 'fasta')
+								SeqIO.write(entry, outfile, 'fasta')
 						locus_lengths.append(len(this_locus[0].seq))
 						if consens:
 							seqs = [entry.seq for entry in this_locus]
