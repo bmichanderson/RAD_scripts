@@ -1,8 +1,8 @@
 
 ##########
-# Author: Ben Anderson
+# Author: B.M. Anderson
 # Date: Mar 2022
-# Modified: Oct 2023 (changed orientation and legend); Apr 2024 (corrected legend)
+# Modified: Oct 2023 (changed orientation and legend); Apr 2024 (corrected legend); Mar 2025 (adjusted plotting margins)
 # Description: create a population heatmap based on an input Fst matrix
 ##########
 
@@ -149,7 +149,7 @@ myfsts <- myfsts[, seq(ncol(myfsts), 1)]
 pdf(paste0(out_pref, "_Fst.pdf"), width = 7, height = 7)
 
 # plot the heatmap
-par(mar = c(5, 4, 4, 5) + 0.1)
+par(mar = c(5, 5, 4, 5) + 0.1)
 heatmapper(myfsts, palette = col_pal)
 
 # stop creating the pdf
@@ -158,7 +158,7 @@ invisible(dev.off())
 
 # similarly, a png
 png(paste0(out_pref, "_Fst.png"), width = 20, height = 20, units = "cm", res = 600)
-par(mar = c(5, 4, 4, 5) + 0.1)
+par(mar = c(5, 5, 4, 5) + 0.1)
 heatmapper(myfsts, palette = col_pal)
 invisible(dev.off())
 
