@@ -1,9 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 ##########################
-# Author: B. Anderson
+# Author: B.M. Anderson
 # Date: Nov 2021
-# Modified: Mar 2022, Apr 2022, Dec 2023 (cleaned up; made default colours)
+# Modified: Mar 2022, Apr 2022, Dec 2023 (cleaned up; made default colours), Mar 2025 (better sample matching)
 # Description: create barplots from Q matrices from Structure-like runs and output from CLUMPAK
 ##########################
 
@@ -23,13 +23,13 @@ parser = argparse.ArgumentParser(description = 'A script to create barplots for 
 # add arguments to parse
 parser.add_argument('-o', type = str, dest = 'out_pre', help = 'The prefix for the output pdf [default \"output\"]')
 parser.add_argument('-c', type = str, dest = 'col_file', help = 'The colours file with one colour per line, e.g. #87cffa or green; ' +
-	'this must be as least as long as the number of K to be plotted')
-parser.add_argument('-p', type = str, dest = 'pops_file', help = 'The populations file in the tab-delimited form ' +
-	'"sampleID    pop", one per line; samples must be in the same order as in the Q matrix')
+	'this must be at least as long as the number of K to be plotted')
+parser.add_argument('-p', type = str, dest = 'pops_file', help = 'The populations file in a tab-delimited form ' +
+	'"sampleID    pop_num", one per line; samples should be in the same order as in the Q matrix')
 parser.add_argument('-q', type = str, dest = 'Q_file', help = 'The Q matrix file containing the whitespace-delimited assignment proportions ' +
 	'without headers or any line information; i.e. a table with K columns and as many rows as samples')
 parser.add_argument('-s', type = str, dest = 'sorting', help = 'An optional file with the order of samples desired, one per line ' +
-	'with the same designation as in the pops_file')
+	'with the same IDs as in the pops_file')
 
 
 # parse the command line
@@ -101,7 +101,8 @@ if sorting:
 	current_samples = list(sample_df.Sample)
 	index = []
 	for sample in sorted_samples:
-		index.append(current_samples.index(sample))
+		if sample in current_samples:
+			index.append(current_samples.index(sample))
 	plot_df = sample_df.loc[index]
 else:
 	plot_df = sample_df.sort_values(['Pop', 'Sample'])
