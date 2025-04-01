@@ -4,7 +4,10 @@ output: html_document
 ---
 
 This markdown provides a series of commands that may be useful when exploring and filtering DArT datasets  
-It relies on the package `dartRverse` (using v. 1.0.6) and the main packages `dartRbase` (v. 1.0.8) and `dartRdata` (v. 1.0.2)  
+It relies on the package `dartRverse` (using v. 1.0.6) and the packages:  
+`dartR.base` (v. 1.0.8)  
+`dartR.data` (v. 1.0.2)  
+`dartR.spatial` (v. 0.78)  
 
 Set the working directory where input files are  
 Input files are:  
@@ -34,15 +37,15 @@ mygenl <- gl.read.dart(snps_file, ind.metafile = meta_file,
 
 Save a copy in case of shutdown/error or for convenience later
 ```{r}
-gl.save(mygenl, file = "mygenl_input.rdata")
+gl.save(mygenl, file = "input.rdata")
 ```
 
 If wanting to load later, start here
 ```{r}
-mygenl <- gl.load("mygenl_input.rdata")
+mygenl <- gl.load("input.rdata")
 ```
 
-Could drop outgroups here (if not via `meta.csv`)
+Optionally drop outgroups (if not done via `meta.csv`)
 ```{r}
 outgroups <- read.table("outgroup_samples.txt", header = FALSE)[, 1]
 mygenl <- gl.drop.ind(mygenl, outgroups, mono.rm = TRUE, recalc = TRUE)
@@ -51,13 +54,13 @@ cat(paste0("Filtered to a genlight of ", nInd(mygenl), " individuals and ",
 snps_remain <- nLoc(mygenl)
 ```
 
-# Evaluate different aspects of the unfiltered dataset  
-Can map population locations
+# Unfiltered
+Interactively map population locations (no output)
 ```{r}
 gl.map.interactive(mygenl)
 ```
 
-Check (and plot to file, if desired, by running the bounding statements below)
+Check the unfiltered data (and plot to file, if desired, by running the bounding statements below)
 ```{r}
 pdf("unfiltered.pdf")
 ```
@@ -74,8 +77,7 @@ Call rate (missing data)
 gl.report.callrate(mygenl, method = "loc")
 gl.report.callrate(mygenl, method = "ind")
 ```
-Reproducibility  
-(whether calls are repeatable, averaged over both alleles)
+Reproducibility (whether calls are repeatable, averaged over both alleles)
 ```{r}
 gl.report.reproducibility(mygenl)
 ```
@@ -107,15 +109,6 @@ invisible(dev.off())
 Change the name of the object for altering
 ```{r}
 filtered_genl <- mygenl
-snps_remain <- nLoc(filtered_genl)
-```
-
-If wanting to remove outgroups at this point (having not removed via `meta.csv` or earlier)
-```{r}
-outgroups <- read.table("outgroup_samples.txt", header = FALSE)[, 1]
-filtered_genl <- gl.drop.ind(filtered_genl, outgroups, mono.rm = TRUE, recalc = TRUE)
-cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and ",
-	nLoc(filtered_genl), " SNPs\n"))
 snps_remain <- nLoc(filtered_genl)
 ```
 
@@ -171,7 +164,7 @@ cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and 
 snps_remain <- nLoc(filtered_genl)
 ```
 
-Filter out individuals with large amounts of missing data, if present
+Filter out individuals with large amounts of missing data (if present)
 ```{r}
 filtered_genl <- gl.filter.callrate(filtered_genl, method = "ind", threshold = 0.50)
 diff <- snps_remain - nLoc(filtered_genl)
@@ -193,7 +186,7 @@ snps_remain <- nLoc(filtered_genl)
 
 If doing analyses sensitive to linkage (e.g. Structure), drop secondary SNPs  
 Can also do this with `method = "random"`  
-Note: if wanting to calculate population heterozygosity stats, keep these!  
+Note: if wanting to calculate population heterozygosity stats, keep these!
 ```{r}
 filtered_genl <- gl.filter.secondaries(filtered_genl, method = "best")
 diff <- snps_remain - nLoc(filtered_genl)
@@ -204,8 +197,8 @@ snps_remain <- nLoc(filtered_genl)
 ```
 
 To avoid linkage, use a Hamming filter to remove tags that are too similar (the same locus)  
-The threshold (default 0.2) is based on the length of tag (69 bp)  
-Assume that if there are fewer than about 8 bp differences, it is the same locus  
+The threshold (default 0.2) needs to consider the length of a tag (69 bp)  
+Assume that if there are fewer than c. 8 bp differences, it is the same locus  
 The threshold is then 8/69 = c. 0.12  
 This can take a long time (not recommended if > 20 k SNPs remain; may have to run overnight)
 ```{r}
@@ -218,7 +211,7 @@ cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and 
 snps_remain <- nLoc(filtered_genl)
 ```
 
-It may be desirable to save the object for import later with `gl.load`
+Save the object for import later with `gl.load`
 ```{r}
 gl.save(filtered_genl, file = "filtered_genl.rdata")
 ```
@@ -251,8 +244,7 @@ Call rate (missing data)
 gl.report.callrate(filtered_genl, method = "loc")
 gl.report.callrate(filtered_genl, method = "ind")
 ```
-Reproducibility  
-(whether calls are repeatable, averaged over both alleles)  
+Reproducibility (whether calls are repeatable, averaged over both alleles)
 ```{r}
 gl.report.reproducibility(filtered_genl)
 ```
@@ -281,17 +273,7 @@ invisible(dev.off())
 ```
 
 ## PCA
-If wanting to subset (remove outgroups), can run this before proceeding  
-(might be preferable to remove outgroups prior to filtering though)
-```{r}
-outgroups <- read.table("outgroup_samples.txt", header = FALSE)[, 1]
-filtered_genl <- gl.drop.ind(filtered_genl, outgroups, mono.rm = TRUE, recalc = TRUE)
-cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and ",
-	nLoc(filtered_genl), " SNPs\n"))
-snps_remain <- nLoc(filtered_genl)
-```
-
-Can run a PCA of the genlight SNPs
+Run a PCA of the genlight SNPs
 ```{r}
 pca <- gl.pcoa(filtered_genl, nfactors = 5, parallel = TRUE, n.cores = 8)
 ```
@@ -299,15 +281,15 @@ pca <- gl.pcoa(filtered_genl, nfactors = 5, parallel = TRUE, n.cores = 8)
 pdf("pca.pdf")
 ```
 
-Use dartR inbuilt
+Use dartR inbuilt for plotting
 ```{r}
 gl.pcoa.plot(pca, filtered_genl, pop.labels = "pop",
 	xaxis = 1, yaxis = 2, zaxis = NULL, interactive = FALSE)
 cat(paste0("Plotting a PCA based on ", snps_remain, " SNPs\n"))
 ```
 
-Or, use custom plotting (depends on pop being labeled with underscore before group, e.g. pop1_sp1)  
-First set colour palette and points depending on number of groups (four or two)
+Or use custom plotting (depends on pop being labeled with underscore before group, e.g. pop1_sp1)  
+First set colour palette and points depending on number of groups (four or two here)
 ```{r}
 # colour palette and point choices for number of groups/taxa
 col_pal <- c("#d433da",
@@ -368,6 +350,7 @@ plot_pca <- function(pca, numsnps, colours, points, x = 1, y = 2) {
 	par(mar = c(5.1, 4.1, 4.1, 2.1), cex.lab = 1)
 }
 ```
+
 Run the plotting
 ```{r}
 num_snps <- nLoc(filtered_genl)
@@ -378,6 +361,7 @@ plot_pca(pca, num_snps, colours, points, x = 2, y = 3)
 plot_pca(pca, num_snps, colours, points, x = 2, y = 4)
 plot_pca(pca, num_snps, colours, points, x = 3, y = 4)
 ```
+
 Plot a legend
 ```{r}
 groupdf <- data.frame(cbind(groups, colours, points))
@@ -397,13 +381,14 @@ Or plot interactively
 ```{r}
 gl.pcoa.plot(pca, filtered_genl, pop.labels = "pop", xaxis = 1, yaxis = 2, zaxis = NULL, interactive = TRUE)
 ```
-3D
+Or plot interactively in 3D
 ```{r}
 gl.pcoa.plot(pca, filtered_genl, pop.labels = "pop", xaxis = 1, yaxis = 2, zaxis = 3, interactive = TRUE)
 ```
 
 # Output files for analysis
-We may be interested in a distance matrix or Structure input file  
+If relevant, generate a fasta of concatenated SNPs and corresponding distance matrix  
+If wanting to run Structure, output a formatted input file  
 
 Distances  
 (method 3 = concatenate SNPs, with ambiguities for hets)
@@ -438,4 +423,190 @@ gl2structure(strgenl, outfile = "filtered.str", add.columns = strgenl$pop,
 coding <- cbind(strgenl$ind.names, strgenl$pop)
 write.table(coding[order(as.numeric(coding[, 2])), ], file = "filtered_str_pops.txt",
 	row.names = FALSE, col.names = FALSE, quote = FALSE)
+```
+
+# Run popgen stats estimates
+First, drop individuals if necessary
+```{r}
+drop_inds <- c(1017,
+1018,
+1034,
+1040,
+1043,
+1044)
+pop_genl <- gl.drop.ind(filtered_genl, drop_inds, recalc = TRUE,
+	mono.rm = TRUE)
+```
+
+Check coverage
+```{r}
+summary(pop_genl$pop)
+```
+
+Drop pops with low coverage  
+```{r}
+drop_pops <- c("R04_ere",
+"R23_ere",
+"R24_ere")
+pop_genl <- gl.drop.pop(pop_genl, drop_pops, recalc = TRUE,
+	mono.rm = TRUE)
+```
+
+Estimate basic stats and write to file
+```{r}
+stde <- function(x) {
+	sqrt(var(x, na.rm = TRUE) / sum(!is.na(x)))
+}
+bstats <- utils.basic.stats(pop_genl)
+summary <- as.data.frame(matrix(ncol = 6, nrow = length(unique(pop_genl$pop))))
+colnames(summary) <- c("Ho", "Ho_SE", "Hs", "Hs_SE", "Fis", "Fis_SE")
+rownames(summary) <- colnames(bstats$Ho)
+summary[, "Ho"] <- apply(bstats$Ho, 2, function(x) mean(x, na.rm = TRUE))
+summary[, "Ho_SE"] <- apply(bstats$Ho, 2, stde)
+summary[, "Hs"] <- apply(bstats$Hs, 2, function(x) mean(x, na.rm = TRUE))
+summary[, "Hs_SE"] <- apply(bstats$Hs, 2, stde)
+summary[, "Fis"] <- apply(bstats$Fis, 2, function(x) mean(x, na.rm = TRUE))
+summary[, "Fis_SE"] <- apply(bstats$Fis, 2, stde)
+## export the table to file
+write.table(summary, file = paste0("popgen_basic_stats.txt"),
+	quote = FALSE, row.names = TRUE)
+```
+
+Plot basic stats to pdf
+```{r}
+mybarplot <- function(data_val, data_se, names, main) {
+	myplot <- barplot(data_val, names = names, las = 2,
+		main = main,
+		ylim = c(min(c(0, 1.2 * (data_val - data_se * 2))), 1.2 * max(data_val + data_se * 2)))
+	arrows(myplot, y0 = data_val + data_se * 2, y1 = data_val - data_se * 2,
+		angle = 90, code = 3, length = 0.1)
+}
+
+pdf("popgen_basic_stats.pdf", width = 10, height = 10)
+mybarplot(summary$Ho, summary$Ho_SE, names = rownames(summary),
+	main = "Ho, observed heterozygosity")
+mybarplot(summary$Hs, summary$Hs_SE, names = rownames(summary),
+	main = "Hs, estimated gene diversity\n(expected heterozygosity)")
+mybarplot(summary$Fis, summary$Fis_SE, names = rownames(summary),
+	main = "Inbreeding coefficient Fis\n(1 - Ho / Hs)")
+invisible(dev.off())
+```
+
+Estimate pairwise Fst with StAMPP and write to file
+```{r}
+fsts <- gl.fst.pop(pop_genl, nboots = 1)
+### export the pairwise Fst values to file
+write.table(fsts, file = "popgen_StAMPP_Fst.txt",
+	quote = FALSE, row.names = TRUE)
+```
+
+Estimate Reich et al. 2009 Fst (accounting for differing sample sizes) and write to file
+```{r}
+pops <- unique(pop_genl$pop)
+fsts_reich <- matrix(nrow = length(pops),
+	ncol = length(pops),
+	dimnames = list(pops, pops))
+index <- 1
+cat(paste0("Calculating pairwise Fst for populations",
+	" (", length(pops), "):"))
+for (pop in pops) {
+	cat(paste0(" ", index))
+	pop1mat <- as.matrix(pop_genl[pop_genl@pop == pop])
+	a1 <- apply(pop1mat, 2, function(x) sum(x, na.rm = TRUE))
+	n1 <- apply(pop1mat, 2, function(x) 2 * sum(!is.na(x)))
+	h1 <- (a1 * (n1 - a1)) / (n1 * (n1 - 1))
+	for (pop2 in pops[-1: -index]) {
+		pop2mat <- as.matrix(pop_genl[pop_genl@pop == pop2])
+		a2 <- apply(pop2mat, 2, function(x) sum(x, na.rm = TRUE))
+		n2 <- apply(pop2mat, 2, function(x) 2 * sum(!is.na(x)))
+		h2 <- (a2 * (n2 - a2)) / (n2 * (n2 - 1))
+		bign <- ((a1 / n1) - (a2 / n2))^2 - (h1 / n1) - (h2 / n2)
+		bigd <- bign + h1 + h2
+		fst_r <- sum(bign, na.rm = TRUE) / sum(bigd, na.rm = TRUE)
+		fsts_reich[pop2, pop] <- fst_r
+	}
+	index <- index + 1
+}
+cat("\n")
+### export the pairwise Fst values to file
+write.table(fsts_reich, file = "popgen_Reich_Fst.txt",
+	quote = FALSE, row.names = TRUE)
+```
+
+Run IBD if interested (will use STaMPP Fst)
+```{r}
+pdf("IBD.pdf", width = 7, height = 7)
+gl.ibd(pop_genl)
+invisible(dev.off())
+```
+
+Alternatively, subset to the populations of interest for IBD  
+(then rerun the above with a different output name)
+```{r}
+drop_pops <- c("R09_Ham",
+"R08_Ham",
+"R07_Ham",
+"R06_Ham",
+"R04_Ham",
+"R05_Ham",
+"R22_Ham",
+"R12_Ham",
+"R11_Ham")
+pop_genl_ere <- gl.drop.pop(pop_genl, drop_pops, recalc = TRUE,
+	mono.rm = TRUE)
+```
+
+Another example
+```{r}
+drop_pops <- c("R17_ere",
+"R15_ere",
+"R16_ere",
+"R10_ere",
+"R14_ere",
+"R13_ere",
+"R20_ere",
+"R21_ere",
+"R03_ere",
+"R01_ere",
+"R09_ere",
+"R08_ere",
+"R06_ere")
+pop_genl_Ham <- gl.drop.pop(pop_genl, drop_pops, recalc = TRUE,
+	mono.rm = TRUE)
+```
+
+Or drop extra pops
+```{r}
+drop_pops <- c("R09_Ham",
+"R08_Ham",
+"R07_Ham",
+"R06_Ham",
+"R04_Ham",
+"R05_Ham",
+"R22_Ham",
+"R12_Ham",
+"R11_Ham",
+"R03_ere")
+pop_genl_erenoR3 <- gl.drop.pop(pop_genl, drop_pops, recalc = TRUE,
+	mono.rm = TRUE)
+```
+
+```{r}
+drop_pops <- c("R17_ere",
+"R15_ere",
+"R16_ere",
+"R10_ere",
+"R14_ere",
+"R13_ere",
+"R20_ere",
+"R21_ere",
+"R03_ere",
+"R01_ere",
+"R09_ere",
+"R08_ere",
+"R06_ere",
+"R11_Ham",
+"R12_Ham")
+pop_genl_HamnoR11R12 <- gl.drop.pop(pop_genl, drop_pops, recalc = TRUE,
+	mono.rm = TRUE)
 ```
