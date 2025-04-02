@@ -1,8 +1,9 @@
 
 ##########
-# Author: Ben Anderson, with ideas from Rachel Binks
+# Author: B.M. Anderson, with ideas from Rachel Binks
 # Date: Dec 2021
-# Modified: May 2022, Oct 2022 (combined with fasta), Oct 2023 (added Reich Fst)
+# Modified: May 2022, Oct 2022 (combined with fasta), Oct 2023 (added Reich Fst),
+#	Mar 2025 (adjust Reich calcs and made a separate function; added argument to select Fst type; corrected boxplot)
 # Description: calculate various popgen stats for a VCF file or a fasta alignment
 # Note:	at least one of the VCF or fasta files must be present
 ##########
@@ -33,13 +34,14 @@ help <- function(help_message) {
 	if (missing(help_message)) {
 		cat("A script to calculate various popgen stats from an input VCF file or fasta alignment\n")
 		cat("Usage: Rscript popgen_stats.R -s samples_file [-o out_pref] [-v vcf_file] [-f fasta_file]",
-			"[-t run Fst calculations]\n")
+			"[-t flag to run Fst calculations] [-r Fst type to run]\n")
 		cat("Options:\n")
 		cat("\t-o\tThe output file name prefix [default output]\n")
 		cat("\t-v\tThe VCF file to be analysed\n")
 		cat("\t-f\tThe fasta alignment to be analysed\n")
 		cat("\t-s\tSamples and populations as a tab-delimited file of sample IDs and pops, one per line\n")
 		cat("\t-t\tRun pairwise Fst calculations between populations (only for VCF) [default: do not]\n")
+		cat("\t-r\t\"s\" for StAMPP Weir and Cockerham 1984 or \"r\" for Reich et al. 2009 [default: both]\n")
 	} else {
 		cat(help_message)
 	}
@@ -59,7 +61,8 @@ stde <- function(x) {
 mybarplot <- function(data_val, data_se, names, main) {
 	myplot <- barplot(data_val, names = names, las = 2,
 		main = main,
-		ylim = c(min(c(0, 1.2 * (data_val - data_se * 2))), 1.2 * max(data_val + data_se * 2)))
+		ylim = c(min(c(0, 1.2 * min(data_val - data_se * 2))),
+			max(c(0, 1.2 * max(data_val + data_se * 2)))))
 	arrows(myplot, y0 = data_val + data_se * 2, y1 = data_val - data_se * 2,
 		angle = 90, code = 3, length = 0.1)
 }
@@ -121,6 +124,49 @@ gd_measure <- function(x) {
 	}
 }
 
+## a function to calculate Reich et al. 2009 Fst estimates
+### Another way to calculate Fst that accounts for smaller/different
+### sample sizes was put forward by Reich et al. 2009 and shown to
+### be less biased by sample size in Willing et al. 2012
+### This measure was implemented for a genlight object here:
+### https://github.com/jessicarick/reich-fst/blob/master/reich_fst.R
+### A modified version of that calculation is included here to avoid
+### the need to use other R packages
+### Note: due to precision in R, error can accumulate when there is
+### addition after division, so reduce this where possible and
+### round the result to 4 decimal places
+reich_fst <- function(genl, populations) {
+	pops <- unique(populations)
+	fsts_reich <- matrix(nrow = length(pops),
+		ncol = length(pops),
+		dimnames = list(pops, pops))
+	index <- 1
+	cat(paste0("Calculating pairwise Fst for populations",
+		" (", length(pops), "):"))
+	for (pop in pops) {
+		cat(paste0(" ", index))
+		pop1mat <- as.matrix(genl[genl@pop == pop])
+		a1 <- apply(pop1mat, 2, function(x) sum(x, na.rm = TRUE))
+		n1 <- apply(pop1mat, 2, function(x) 2 * sum(!is.na(x)))
+		h1 <- (a1 * (n1 - a1)) / (n1 * (n1 - 1))
+		for (pop2 in pops[-1: -index]) {
+			pop2mat <- as.matrix(genl[genl@pop == pop2])
+			a2 <- apply(pop2mat, 2, function(x) sum(x, na.rm = TRUE))
+			n2 <- apply(pop2mat, 2, function(x) 2 * sum(!is.na(x)))
+			h2 <- (a2 * (n2 - a2)) / (n2 * (n2 - 1))
+			bign <- (((a1 * n2) - (a2 * n1)) / (n1 * n2))^2 -
+				(a1 * (n1 - a1)) / (n1 * n1 * (n1 - 1)) - (a2 * (n2 - a2)) / (n2 * n2 * (n2 - 1))
+			bigd <- bign + h1 + h2
+			fst_r <- sum(bign, na.rm = TRUE) / sum(bigd, na.rm = TRUE)
+			fsts_reich[pop2, pop] <- round(fst_r, digits = 4)
+		}
+		index <- index + 1
+	}
+	cat("\n")
+	# return the matrix
+	fsts_reich
+}
+
 
 #####################
 # Execution
@@ -140,6 +186,7 @@ if (length(args) == 0) { # nolint
 	fasta_present <- FALSE
 	samples_present <- FALSE
 	run_fst <- FALSE
+	type_fst <- "both"
 	for (index in seq_len(length(args))) {
 		if (args[index] == "-o") {
 			out_pref <- args[index + 1]
@@ -159,6 +206,8 @@ if (length(args) == 0) { # nolint
 		} else if (args[index] == "-t") {
 			run_fst <- TRUE
 			cat("Will run Fst calculations\n")
+		} else if (args[index] == "-r") {
+			type_fst <- as.character(args[index + 1])
 		} else {
 			if (catch) {
 				catch_args[extra] <- args[index]
@@ -289,63 +338,39 @@ if (vcf_present) {
 
 	## Run Fst calculations if requested
 	if (run_fst) {
-		### One way is via a genlight and StAMPP
-		### convert the vcf to a genlight, then add pop
-		### NOTE: this will remove sites that are not biallelic
-		cat("Calculating pairwise Fst with StAMPP\n")
+		### convert to genlight
 		genl <- vcfR2genlight(vcf)
 		pop(genl) <- populations
 		cat(paste0("The genlight has ", nLoc(genl), " loci\n"))
 
-		### now use the genlight in StAMPP
-		### this calculates Fst following Weir and Cockerham 1984
-		### if wanting to get confidence intervals, one could use e.g.
-		### nboots = 100, percent = 95, nclusters = 4
-		fsts <- stamppFst(genl, nboots = 1)
-
-		### export the pairwise Fst values to file
-		write.table(fsts, file = paste0(out_pref, "_StAMPP_Fst.txt"),
-			quote = FALSE, row.names = TRUE)
-
-
-		### Another way to calculate Fst that accounts for smaller/different
-		### sample sizes was put forward by Reich et al. 2009 and shown to
-		### be less biased by sample size in Willing et al. 2012
-		### This measure was implemented for a genlight object here:
-		### https://github.com/jessicarick/reich-fst/blob/master/reich_fst.R
-		### A modified version of that calculation is included here to avoid
-		### the need to use other R packages
-		pops <- unique(populations)
-		fsts_reich <- matrix(nrow = length(pops),
-			ncol = length(pops),
-			dimnames = list(pops, pops))
-		index <- 1
-		cat(paste0("Calculating pairwise Fst for populations",
-			" (", length(pops), "):"))
-		for (pop in pops) {
-			cat(paste0(" ", index))
-			pop1mat <- as.matrix(genl[genl@pop == pop])
-			a1 <- apply(pop1mat, 2, function(x) sum(x, na.rm = TRUE))
-			n1 <- apply(pop1mat, 2, function(x) 2 * sum(!is.na(x)))
-			h1 <- (a1 * (n1 - a1)) / (n1 * (n1 - 1))
-			for (pop2 in pops[-1: -index]) {
-				pop2mat <- as.matrix(genl[genl@pop == pop2])
-				a2 <- apply(pop2mat, 2, function(x) sum(x, na.rm = TRUE))
-				n2 <- apply(pop2mat, 2, function(x) 2 * sum(!is.na(x)))
-				h2 <- (a2 * (n2 - a2)) / (n2 * (n2 - 1))
-				bign <- ((a1 / n1) - (a2 / n2))^2 - (h1 / n1) - (h2 / n2)
-				bigd <- bign + h1 + h2
-				fst_r <- sum(bign, na.rm = TRUE) / sum(bigd, na.rm = TRUE)
-				fsts_reich[pop2, pop] <- fst_r
-			}
-			index <- index + 1
+		if (type_fst == "r") {
+			### calculate Reich Fst
+			cat("Calculating pairwise Fst using an adaptation of Reich et al. 2009\n")
+			fsts_reich <- reich_fst(genl, populations)
+			### export the pairwise Fst values to file
+			write.table(fsts_reich, file = paste0(out_pref, "_Reich_Fst.txt"),
+				quote = FALSE, row.names = TRUE)
+		} else if (type_fst == "s") {
+			### calculate Weir and Cockerham Fst with StAMPP
+			cat("Calculating pairwise Fst using StAMPP\n")
+			fsts <- stamppFst(genl, nboots = 1)
+			### export the pairwise Fst values to file
+			write.table(fsts, file = paste0(out_pref, "_StAMPP_Fst.txt"),
+				quote = FALSE, row.names = TRUE)
+		} else {
+			### calculate Weir and Cockerham Fst with StAMPP
+			cat("Calculating pairwise Fst using StAMPP\n")
+			fsts <- stamppFst(genl, nboots = 1)
+			### export the pairwise Fst values to file
+			write.table(fsts, file = paste0(out_pref, "_StAMPP_Fst.txt"),
+				quote = FALSE, row.names = TRUE)
+			### calculate Reich Fst
+			cat("Calculating pairwise Fst using an adaptation of Reich et al. 2009\n")
+			fsts_reich <- reich_fst(genl, populations)
+			### export the pairwise Fst values to file
+			write.table(fsts_reich, file = paste0(out_pref, "_Reich_Fst.txt"),
+				quote = FALSE, row.names = TRUE)
 		}
-		cat("\n")
-
-		### export the pairwise Fst values to file
-		write.table(fsts_reich, file = paste0(out_pref, "_Reich_Fst.txt"),
-			quote = FALSE, row.names = TRUE)
-
 	}
 }
 
