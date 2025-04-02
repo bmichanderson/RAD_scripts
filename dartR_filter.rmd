@@ -425,16 +425,32 @@ write.table(coding[order(as.numeric(coding[, 2])), ], file = "filtered_str_pops.
 	row.names = FALSE, col.names = FALSE, quote = FALSE)
 ```
 
+# Popgen
+Load the dataset (if not loaded yet and starting here)
+```{r}
+filtered_genl <- gl.load("filtered_genl.rdata")
+```
+
 # Run popgen stats estimates
 First, drop individuals if necessary
 ```{r}
+# hybrids
 drop_inds <- c(1017,
 1018,
 1034,
 1040,
 1043,
 1044)
-pop_genl <- gl.drop.ind(filtered_genl, drop_inds, recalc = TRUE,
+# downsampling for some pops
+drop_others <- c(1059,
+1056,
+1060,
+1065,
+1069,
+1072,
+1078,
+1081)
+pop_genl <- gl.drop.ind(filtered_genl, c(drop_inds, drop_others), recalc = TRUE,
 	mono.rm = TRUE)
 ```
 
@@ -477,7 +493,8 @@ Plot basic stats to pdf
 mybarplot <- function(data_val, data_se, names, main) {
 	myplot <- barplot(data_val, names = names, las = 2,
 		main = main,
-		ylim = c(min(c(0, 1.2 * (data_val - data_se * 2))), 1.2 * max(data_val + data_se * 2)))
+		ylim = c(min(c(0, 1.2 * (data_val - data_se * 2))),
+			max(0, 1.2 * max(data_val + data_se * 2))))
 	arrows(myplot, y0 = data_val + data_se * 2, y1 = data_val - data_se * 2,
 		angle = 90, code = 3, length = 0.1)
 }
@@ -500,42 +517,9 @@ write.table(fsts, file = "popgen_StAMPP_Fst.txt",
 	quote = FALSE, row.names = TRUE)
 ```
 
-Estimate Reich et al. 2009 Fst (accounting for differing sample sizes) and write to file
+Run IBD if interested (will use STaMPP Fst by default)
 ```{r}
-pops <- unique(pop_genl$pop)
-fsts_reich <- matrix(nrow = length(pops),
-	ncol = length(pops),
-	dimnames = list(pops, pops))
-index <- 1
-cat(paste0("Calculating pairwise Fst for populations",
-	" (", length(pops), "):"))
-for (pop in pops) {
-	cat(paste0(" ", index))
-	pop1mat <- as.matrix(pop_genl[pop_genl@pop == pop])
-	a1 <- apply(pop1mat, 2, function(x) sum(x, na.rm = TRUE))
-	n1 <- apply(pop1mat, 2, function(x) 2 * sum(!is.na(x)))
-	h1 <- (a1 * (n1 - a1)) / (n1 * (n1 - 1))
-	for (pop2 in pops[-1: -index]) {
-		pop2mat <- as.matrix(pop_genl[pop_genl@pop == pop2])
-		a2 <- apply(pop2mat, 2, function(x) sum(x, na.rm = TRUE))
-		n2 <- apply(pop2mat, 2, function(x) 2 * sum(!is.na(x)))
-		h2 <- (a2 * (n2 - a2)) / (n2 * (n2 - 1))
-		bign <- ((a1 / n1) - (a2 / n2))^2 - (h1 / n1) - (h2 / n2)
-		bigd <- bign + h1 + h2
-		fst_r <- sum(bign, na.rm = TRUE) / sum(bigd, na.rm = TRUE)
-		fsts_reich[pop2, pop] <- fst_r
-	}
-	index <- index + 1
-}
-cat("\n")
-### export the pairwise Fst values to file
-write.table(fsts_reich, file = "popgen_Reich_Fst.txt",
-	quote = FALSE, row.names = TRUE)
-```
-
-Run IBD if interested (will use STaMPP Fst)
-```{r}
-pdf("IBD.pdf", width = 7, height = 7)
+pdf("all_StAMPP_IBD.pdf", width = 7, height = 7)
 gl.ibd(pop_genl)
 invisible(dev.off())
 ```
@@ -587,7 +571,7 @@ drop_pops <- c("R09_Ham",
 "R12_Ham",
 "R11_Ham",
 "R03_ere")
-pop_genl_erenoR3 <- gl.drop.pop(pop_genl, drop_pops, recalc = TRUE,
+pop_genl_ere_noR3 <- gl.drop.pop(pop_genl, drop_pops, recalc = TRUE,
 	mono.rm = TRUE)
 ```
 
@@ -607,6 +591,6 @@ drop_pops <- c("R17_ere",
 "R06_ere",
 "R11_Ham",
 "R12_Ham")
-pop_genl_HamnoR11R12 <- gl.drop.pop(pop_genl, drop_pops, recalc = TRUE,
+pop_genl_Ham_noR11R12 <- gl.drop.pop(pop_genl, drop_pops, recalc = TRUE,
 	mono.rm = TRUE)
 ```
