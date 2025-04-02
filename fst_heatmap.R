@@ -2,7 +2,8 @@
 ##########
 # Author: B.M. Anderson
 # Date: Mar 2022
-# Modified: Oct 2023 (changed orientation and legend); Apr 2024 (corrected legend); Mar 2025 (adjusted plotting margins)
+# Modified: Oct 2023 (changed orientation and legend); Apr 2024 (corrected legend);
+#	Mar 2025 (adjusted plotting margins, corrected legend, reduced screen output)
 # Description: create a population heatmap based on an input Fst matrix
 ##########
 
@@ -46,7 +47,8 @@ heatmapper <- function(fstmat, palette = "greens", ...) {
 	legend_colours <- as.raster(hcl.colors(n = 100, palette = palette))
 	range_min <- min(fstmat, na.rm = TRUE)
 	range_max <- max(fstmat, na.rm = TRUE)
-	if (range_max - range_min < 0.2) {
+	full_range <- range_max - range_min
+	if (full_range < 0.2) {
 		mult <- 100
 		step <- 0.02
 		rnum <- 2
@@ -55,16 +57,16 @@ heatmapper <- function(fstmat, palette = "greens", ...) {
 		step <- 0.1
 		rnum <- 1
 	}
-	legend_seq <- seq(ceiling(range_min * mult) / mult,
-		floor(range_max * mult) / mult, by = step)
+	start <- ceiling(range_min * mult) / mult
+	end <- floor(range_max * mult) / mult
+	legend_seq <- seq(start, end, by = step)
 	legend_labels <- format(round(legend_seq, rnum), nsmall = rnum)
 	plot(x = c(0, 2), y = c(0, 1), type = "n",
 		axes = FALSE, xlab = "", ylab = "", main = "")
-	axis(side = 4, at = legend_seq / range_max, pos = 1, labels = FALSE,
+	axis(side = 4, at = (legend_seq - range_min) / full_range, pos = 1, labels = FALSE,
 		col = 0, col.ticks = 1)
-	mtext(legend_labels, side = 4, line = -0.5, at = legend_seq / range_max, las = 2)
-	rasterImage(legend_colours, xleft = 0, ybottom = range_min / range_max,
-		xright = 1, ytop = 1)
+	mtext(legend_labels, side = 4, line = -0.5, at = (legend_seq - range_min) / full_range, las = 2)
+	rasterImage(legend_colours, xleft = 0, ybottom = 0, xright = 1, ytop = 1)
 	par(op)
 }
 
@@ -119,13 +121,11 @@ if (pops_present) {
 # convert the Fst matrix to square (account for multiple input orientations)
 # this will allow us to re-order it if pops_present
 if (is.na(fst_mat[1, 2])) {	# lower triangle matrix
-	cat("Assuming lower trianglular Fst matrix input\n")
 	fst_mat[upper.tri(fst_mat)] <- t(fst_mat)[upper.tri(fst_mat)]
 } else if (is.na(fst_mat[2, 1])) {		# upper triangle matrix
-	cat("Assuming upper trianglular Fst matrix input\n")
 	fst_mat[lower.tri(fst_mat)] <- t(fst_mat)[lower.tri(fst_mat)]
 } else {
-	cat("Assuming square Fst matrix input\n")
+	# assuming square Fst matrix input
 }
 diag(fst_mat) <- NA
 
