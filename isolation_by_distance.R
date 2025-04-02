@@ -1,8 +1,8 @@
 
 ##########
-# Author: Ben Anderson
+# Author: B.M. Anderson
 # Date: Feb 2022
-# Modified: Nov 2023 (account for pop names as numbers)
+# Modified: Nov 2023 (account for pop names as numbers), Apr 2025 (reduced screen output)
 # Description: compare a distance matrix (e.g. Fst) to geographic distance
 ##########
 
@@ -14,7 +14,7 @@ suppressMessages(library(vegan))
 
 # Define functions
 
-# a helper function for errors or no args
+## a helper function for errors or no args
 help <- function(help_message) {
 	if (missing(help_message)) {
 		cat("A script to compare distances to geographic distances\n")
@@ -32,8 +32,6 @@ help <- function(help_message) {
 	}
 }
 
-
-# Main
 
 # parse the command line
 args <- commandArgs(trailingOnly = TRUE)
@@ -61,16 +59,13 @@ if (length(args) == 0) {
 			loc_file <- args[index + 1]
 		} else if (args[index] == "-m") {
 			run_mantel <- TRUE
-			cat("Will run a Mantel test\n")
 		} else if (args[index] == "-r") {
 			run_regression <- TRUE
-			cat("Will run a linear regression\n")
 		} else if (args[index] == "-s") {
 			samples_present <- TRUE
 			sample_file <- args[index + 1]
 		} else if (args[index] == "-z") {
 			convert_zero <- TRUE
-			cat("Will convert negative distances to zero\n")
 		} else {
 			catch_args[i] <- args[index]
 			i <- i + 1
@@ -100,13 +95,11 @@ if (any(! rownames(dist_mat) %in% loc_table$V1)) {
 
 # convert the distance matrix to square (account for multiple input orientations)
 if (is.na(dist_mat[1, 2])) {	# lower triangle matrix
-	cat("Assuming lower trianglular distance matrix input\n")
 	dist_mat[upper.tri(dist_mat)] <- t(dist_mat)[upper.tri(dist_mat)]
 } else if (is.na(dist_mat[2, 1])) {		# upper triangle matrix
-	cat("Assuming upper trianglular distance matrix input\n")
 	dist_mat[lower.tri(dist_mat)] <- t(dist_mat)[lower.tri(dist_mat)]
 } else {
-	cat("Assuming square distance matrix input\n")
+	# assume a square distance matrix input
 }
 diag(dist_mat) <- NA
 
@@ -181,7 +174,7 @@ if (run_regression) {
 	ltext <- bquote(atop(R^2 ~ "=" ~ .(adjrsquared), "P =" ~ .(pvalue)))
 	legend("topleft", legend = ltext, bty = "n", cex = 1.5, xjust = 0)
 
-	# if running with Fst, then want to do another regression with log geo dist
+	# if running with Fst, then may want to do another regression with log geo dist
 	lmodel <- lm(alter_dist_mat[lower.tri(dist_mat, diag = FALSE)] ~
 				log_geo_mat[lower.tri(geo_mat, diag = FALSE)])
 	rsquared <- summary(lmodel)$r.squared
