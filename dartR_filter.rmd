@@ -45,7 +45,7 @@ If wanting to load later, start here
 mygenl <- gl.load("input.rdata")
 ```
 
-Optionally drop outgroups (if not done via `meta.csv`)
+Drop outgroups if desired (and if not done via `meta.csv`)
 ```{r}
 outgroups <- read.table("outgroup_samples.txt", header = FALSE)[, 1]
 mygenl <- gl.drop.ind(mygenl, outgroups, mono.rm = TRUE, recalc = TRUE)
@@ -54,15 +54,15 @@ cat(paste0("Filtered to a genlight of ", nInd(mygenl), " individuals and ",
 snps_remain <- nLoc(mygenl)
 ```
 
-# Unfiltered
+# Unfiltered data summary
 Interactively map population locations (no output)
 ```{r}
 gl.map.interactive(mygenl)
 ```
 
-Check the unfiltered data (and plot to file, if desired, by running the bounding statements below)
+Assess various stats (and plot to file, if desired, by running the bounding statements below)
 ```{r}
-pdf("unfiltered.pdf")
+pdf("unfiltered.pdf", width = 8, height = 12)
 ```
 Read depth
 ```{r}
@@ -81,7 +81,7 @@ Reproducibility (whether calls are repeatable, averaged over both alleles)
 ```{r}
 gl.report.reproducibility(mygenl)
 ```
-Secondaries (multiple SNPs per tag)
+Secondaries (multiple SNPs per tag; also gives an estimate of invariant loci)
 ```{r}
 gl.report.secondaries(mygenl)
 ```
@@ -89,7 +89,7 @@ gl.report.secondaries(mygenl)
 invisible(dev.off())
 ```
 
-To generate more graphics-heavy outputs, make a larger pdf
+Larger plots can be generated
 ```{r}
 pdf("unfiltered_graphs.pdf", width = 21, height = 21)
 ```
@@ -105,7 +105,7 @@ gl.report.maf(mygenl)
 invisible(dev.off())
 ```
 
-# Filter
+# Filter data for various analyses
 Change the name of the object for altering
 ```{r}
 filtered_genl <- mygenl
@@ -142,7 +142,8 @@ cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and 
 snps_remain <- nLoc(filtered_genl)
 ```
 
-Remove SNPs found in less than a proportion of samples
+Remove SNPs found in less than a proportion of samples  
+(do not use this if wanting to estimate autosomal stats per population later)
 ```{r}
 filtered_genl <- gl.filter.callrate(filtered_genl, method = "loc", threshold = 0.95)
 diff <- snps_remain - nLoc(filtered_genl)
@@ -154,7 +155,8 @@ snps_remain <- nLoc(filtered_genl)
 
 Filter based on minor allele frequency  
 (if a value > 1 is used, it is interpreted as minor allele count;  
-this is preferable for a dataset of multiple populations)
+this is preferable for a dataset of multiple populations)  
+(do not use this if wanting to calculate autosomal stats later)
 ```{r}
 filtered_genl <- gl.filter.maf(filtered_genl, threshold = 3)
 diff <- snps_remain - nLoc(filtered_genl)
@@ -174,7 +176,8 @@ cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and 
 snps_remain <- nLoc(filtered_genl)
 ```
 
-Remove monomorphic and fully NA loci (if any are left)
+Remove monomorphic and fully NA loci (if any are left)  
+(do not use this if wanting to estimate autosomal stats later)
 ```{r}
 filtered_genl <- gl.filter.monomorphs(filtered_genl)
 diff <- snps_remain - nLoc(filtered_genl)
@@ -186,7 +189,7 @@ snps_remain <- nLoc(filtered_genl)
 
 If doing analyses sensitive to linkage (e.g. Structure), drop secondary SNPs  
 Can also do this with `method = "random"`  
-Note: if wanting to calculate population heterozygosity stats, keep these!
+(Note: if wanting to calculate autosomal population heterozygosity stats, keep these!)
 ```{r}
 filtered_genl <- gl.filter.secondaries(filtered_genl, method = "best")
 diff <- snps_remain - nLoc(filtered_genl)
@@ -200,7 +203,8 @@ To avoid linkage, use a Hamming filter to remove tags that are too similar (the 
 The threshold (default 0.2) needs to consider the length of a tag (69 bp)  
 Assume that if there are fewer than c. 8 bp differences, it is the same locus  
 The threshold is then 8/69 = c. 0.12  
-This can take a long time (not recommended if > 20 k SNPs remain; may have to run overnight)
+This can take a long time (not recommended if > 20 k SNPs remain; may have to run overnight)  
+(do not use this if wanting autosomal stats later)
 ```{r}
 filtered_genl <- gl.filter.hamming(filtered_genl, tag.length = 69, rs = 5,
 	threshold = 0.12, pb = TRUE)
@@ -227,56 +231,13 @@ Recalculate metrics in case samples have been dropped
 filtered_genl <- gl.recalc.metrics(filtered_genl)
 ```
 
-Check (and plot to file, if desired, by running the bounding statements below):
-```{r}
-pdf("filtered.pdf")
-```
-Read depth
-```{r}
-gl.report.rdepth(filtered_genl)
-```
-Tag length (sequence length)
-```{r}
-gl.report.taglength(filtered_genl)
-```
-Call rate (missing data)
-```{r}
-gl.report.callrate(filtered_genl, method = "loc")
-gl.report.callrate(filtered_genl, method = "ind")
-```
-Reproducibility (whether calls are repeatable, averaged over both alleles)
-```{r}
-gl.report.reproducibility(filtered_genl)
-```
-Secondaries (multiple SNPs per locus)
-```{r}
-gl.report.secondaries(filtered_genl)
-```
-```{r}
-invisible(dev.off())
-```
-
-Again, can make a larger pdf for graphs
-```{r}
-pdf("filtered_graphs.pdf", width = 21, height = 21)
-```
-Smear plot
-```{r}
-smearplotgl <- gl.smearplot(filtered_genl, ind_labels = FALSE)
-```
-Minor allele frequency
-```{r}
-gl.report.maf(filtered_genl)
-```
-```{r}
-invisible(dev.off())
-```
-
 ## PCA
 Run a PCA of the genlight SNPs
 ```{r}
 pca <- gl.pcoa(filtered_genl, nfactors = 5, parallel = TRUE, n.cores = 8)
 ```
+
+Start creating a PDF and then choose to run either/both plotting methods
 ```{r}
 pdf("pca.pdf")
 ```
@@ -351,7 +312,7 @@ plot_pca <- function(pca, numsnps, colours, points, x = 1, y = 2) {
 }
 ```
 
-Run the plotting
+Plot
 ```{r}
 num_snps <- nLoc(filtered_genl)
 plot_pca(pca, num_snps, colours, points, x = 1, y = 2)
@@ -428,47 +389,39 @@ write.table(coding[order(as.numeric(coding[, 2])), ], file = "filtered_str_pops.
 # Popgen
 Load the dataset (if not loaded yet and starting here)
 ```{r}
-filtered_genl <- gl.load("filtered_genl.rdata")
+pop_genl <- gl.load("filtered_genl.rdata")
 ```
 
-# Run popgen stats estimates
-First, drop individuals if necessary
+Or copy the object filtered before
 ```{r}
-# hybrids
-drop_inds <- c(1017,
-1018,
-1034,
-1040,
-1043,
-1044)
-# downsampling for some pops
-drop_others <- c(1059,
-1056,
-1060,
-1065,
-1069,
-1072,
-1078,
-1081)
-pop_genl <- gl.drop.ind(filtered_genl, c(drop_inds, drop_others), recalc = TRUE,
-	mono.rm = TRUE)
+pop_genl <- filtered_genl
 ```
 
-Check coverage
+Check sample coverage
 ```{r}
 summary(pop_genl$pop)
 ```
 
-Drop pops with low coverage  
+## SNP or autosomal stats estimates
+Drop individuals if necessary
 ```{r}
-drop_pops <- c("R04_ere",
-"R23_ere",
-"R24_ere")
-pop_genl <- gl.drop.pop(pop_genl, drop_pops, recalc = TRUE,
-	mono.rm = TRUE)
+drops <- read.table("drop_samples_diversity.txt", header = FALSE)[, 1]
+pop_genl <- gl.drop.ind(pop_genl, drops, mono.rm = TRUE, recalc = TRUE)
+cat(paste0("Filtered to a genlight of ", nInd(pop_genl), " individuals and ",
+	nLoc(pop_genl), " SNPs\n"))
+snps_remain <- nLoc(pop_genl)
 ```
 
-Estimate basic stats and write to file
+Drop populations if necessary
+```{r}
+drops <- read.table("drop_pops.txt", header = FALSE)[, 1]
+pop_genl <- gl.drop.pop(pop_genl, drops, mono.rm = TRUE, recalc = TRUE)
+cat(paste0("Filtered to a genlight of ", nInd(pop_genl), " individuals and ",
+	nLoc(pop_genl), " SNPs\n"))
+snps_remain <- nLoc(pop_genl)
+```
+
+Estimate basic SNP stats
 ```{r}
 stde <- function(x) {
 	sqrt(var(x, na.rm = TRUE) / sum(!is.na(x)))
@@ -483,7 +436,36 @@ summary[, "Hs"] <- apply(bstats$Hs, 2, function(x) mean(x, na.rm = TRUE))
 summary[, "Hs_SE"] <- apply(bstats$Hs, 2, stde)
 summary[, "Fis"] <- apply(bstats$Fis, 2, function(x) mean(x, na.rm = TRUE))
 summary[, "Fis_SE"] <- apply(bstats$Fis, 2, stde)
-## export the table to file
+```
+
+Or estimate autosomal heterozygosity  
+Note: this requires that secondaries have not been filtered out  
+To ensure no missing data, each population needs to be filtered separately  
+Only loci found in all samples in that population will be kept  
+Note: the function will not report Fis for autosomal(!) so it uses normal calcs
+```{r}
+pops <- sort(unique(pop_genl$pop))
+summary <- as.data.frame(matrix(ncol = 7, nrow = length(pops)))
+colnames(summary) <- c("Loci", "Ho", "Ho_SE", "Hs", "Hs_SE", "Fis", "Fis_SE")
+rownames(summary) <- pops
+for (pop in pops) {
+	sub_genl <- gl.keep.pop(pop_genl, pop, mono.rm = TRUE, recalc = TRUE)
+	sub_genl <- gl.filter.callrate(sub_genl, method = "loc", threshold = 1)
+	get_invariant <- gl.report.secondaries(sub_genl)
+	stats <- gl.report.heterozygosity(sub_genl, n.invariant = get_invariant[7, 2])
+	summary[pop, "Loci"] <- stats[1, "n.Loc"]
+	summary[pop, "Ho"] <- stats[1, "Ho.adj"]
+	summary[pop, "Ho_SE"] <- stats[1, "Ho.adjSE"]
+	summary[pop, "Hs"] <- stats[1, "He.adj"]
+	summary[pop, "Hs_SE"] <- stats[1, "He.adjSE"]
+	stats2 <- gl.report.heterozygosity(sub_genl, n.invariant = 0)
+	summary[pop, "Fis"] <- stats2[1, "FIS"]
+	summary[pop, "Fis_SE"] <- stats2[1, "FISSE"]
+}
+```
+
+Write to file
+```{r}
 write.table(summary, file = paste0("popgen_basic_stats.txt"),
 	quote = FALSE, row.names = TRUE)
 ```
@@ -505,10 +487,11 @@ mybarplot(summary$Ho, summary$Ho_SE, names = rownames(summary),
 mybarplot(summary$Hs, summary$Hs_SE, names = rownames(summary),
 	main = "Hs, estimated gene diversity\n(expected heterozygosity)")
 mybarplot(summary$Fis, summary$Fis_SE, names = rownames(summary),
-	main = "Inbreeding coefficient Fis\n(1 - Ho / Hs)")
+		main = "Inbreeding coefficient Fis\n(1 - Ho / Hs)")
 invisible(dev.off())
 ```
 
+## Pairwise Fst and IBD
 Estimate pairwise Fst with StAMPP and write to file
 ```{r}
 fsts <- gl.fst.pop(pop_genl, nboots = 1)
@@ -525,72 +508,11 @@ invisible(dev.off())
 ```
 
 Alternatively, subset to the populations of interest for IBD  
-(then rerun the above with a different output name)
+(then rerun the above with a different output name and input genl variable)
 ```{r}
-drop_pops <- c("R09_Ham",
-"R08_Ham",
-"R07_Ham",
-"R06_Ham",
-"R04_Ham",
-"R05_Ham",
-"R22_Ham",
-"R12_Ham",
-"R11_Ham")
-pop_genl_ere <- gl.drop.pop(pop_genl, drop_pops, recalc = TRUE,
-	mono.rm = TRUE)
-```
-
-Another example
-```{r}
-drop_pops <- c("R17_ere",
-"R15_ere",
-"R16_ere",
-"R10_ere",
-"R14_ere",
-"R13_ere",
-"R20_ere",
-"R21_ere",
-"R03_ere",
-"R01_ere",
-"R09_ere",
-"R08_ere",
-"R06_ere")
-pop_genl_Ham <- gl.drop.pop(pop_genl, drop_pops, recalc = TRUE,
-	mono.rm = TRUE)
-```
-
-Or drop extra pops
-```{r}
-drop_pops <- c("R09_Ham",
-"R08_Ham",
-"R07_Ham",
-"R06_Ham",
-"R04_Ham",
-"R05_Ham",
-"R22_Ham",
-"R12_Ham",
-"R11_Ham",
-"R03_ere")
-pop_genl_ere_noR3 <- gl.drop.pop(pop_genl, drop_pops, recalc = TRUE,
-	mono.rm = TRUE)
-```
-
-```{r}
-drop_pops <- c("R17_ere",
-"R15_ere",
-"R16_ere",
-"R10_ere",
-"R14_ere",
-"R13_ere",
-"R20_ere",
-"R21_ere",
-"R03_ere",
-"R01_ere",
-"R09_ere",
-"R08_ere",
-"R06_ere",
-"R11_Ham",
-"R12_Ham")
-pop_genl_Ham_noR11R12 <- gl.drop.pop(pop_genl, drop_pops, recalc = TRUE,
-	mono.rm = TRUE)
+drops <- read.table("drop_pops.txt", header = FALSE)[, 1]
+pop_genl_subset <- gl.drop.pop(pop_genl, drops, mono.rm = TRUE, recalc = TRUE)
+cat(paste0("Filtered to a genlight of ", nInd(pop_genl_subset), " individuals and ",
+	nLoc(pop_genl_subset), " SNPs\n"))
+snps_remain <- nLoc(pop_genl_subset)
 ```
