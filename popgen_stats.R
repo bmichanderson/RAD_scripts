@@ -4,8 +4,11 @@
 # Date: Dec 2021
 # Modified: May 2022, Oct 2022 (combined with fasta), Oct 2023 (added Reich Fst),
 #	Mar 2025 (adjust Reich calcs and made a separate function; added argument to select Fst type; corrected boxplot)
-# Description: calculate various popgen stats for a VCF file or a fasta alignment
-# Note:	at least one of the VCF or fasta files must be present
+#	Apr 2025 (changed fasta behaviour to take a list of multiple files and average across; assume one population)
+# Description: calculate various popgen stats for a VCF file or a set of fasta alignments specified in a text file
+# Note:	either the VCF or fasta files must be present
+# Note: if specifying fasta input, it is assumed the alignments come from a single population
+#	(one set of stats calculated)
 ##########
 
 
@@ -32,16 +35,17 @@ amb_df[, 2] <- 		c("a", "c", "g", "t", "t", "c", "g", "g", "t", "t")
 ## a helper function for errors or no args
 help <- function(help_message) {
 	if (missing(help_message)) {
-		cat("A script to calculate various popgen stats from an input VCF file or fasta alignment\n")
-		cat("Usage: Rscript popgen_stats.R -s samples_file [-o out_pref] [-v vcf_file] [-f fasta_file]",
+		cat("A script to calculate various popgen stats from an input VCF file or list of fasta alignments\n")
+		cat("Usage: Rscript popgen_stats.R -s samples_file [-o out_pref] [-v vcf_file] [-f fasta_list]",
 			"[-t flag to run Fst calculations] [-r Fst type to run]\n")
 		cat("Options:\n")
 		cat("\t-o\tThe output file name prefix [default output]\n")
 		cat("\t-v\tThe VCF file to be analysed\n")
-		cat("\t-f\tThe fasta alignment to be analysed\n")
+		cat("\t-f\tThe text file list of fasta alignments to be analysed (from a single population)\n")
 		cat("\t-s\tSamples and populations as a tab-delimited file of sample IDs and pops, one per line\n")
 		cat("\t-t\tRun pairwise Fst calculations between populations (only for VCF) [default: do not]\n")
-		cat("\t-r\t\"s\" for StAMPP Weir and Cockerham 1984 or \"r\" for Reich et al. 2009 [default: both]\n")
+		cat("\t-r\tType of Fst calculation: \"s\" for StAMPP Weir and Cockerham 1984 or",
+			"\"r\" for Reich et al. 2009 [default: both]\n")
 	} else {
 		cat(help_message)
 	}
@@ -123,6 +127,7 @@ gd_measure <- function(x) {
 		1 - sum(nchoose2(counts)) / nchoose2(sum(counts))
 	}
 }
+
 
 ## a function to calculate Reich et al. 2009 Fst estimates
 ### Another way to calculate Fst that accounts for smaller/different
@@ -223,7 +228,7 @@ if (! samples_present) {
 	stop(help("Missing argument for samples file!\n"), call. = FALSE)
 }
 if (all(c(! vcf_present, ! fasta_present))) {
-	stop(help("Missing argument for VCF file or fasta file!\n"), call. = FALSE)
+	stop(help("Missing argument for VCF file or fasta file list!\n"), call. = FALSE)
 }
 
 
@@ -236,7 +241,8 @@ if (vcf_present) {
 		length(unique(vcf@fix[, 1])), "loci and", nrow(vcf@fix), "SNPs\n")
 }
 if (fasta_present) {
-	fasta <- read.dna(fasta_file, format = "fasta")
+	# read in the list and store (a single column of strings)
+	fasta_list <- read.table(fasta_file, header = FALSE)[, 1]
 }
 
 
@@ -380,95 +386,84 @@ if (vcf_present) {
 #####################
 
 
-# process the fasta file, if present, and calculate stats
+# process the fasta files (individual loci), if present, and calculate stats
 if (fasta_present) {
-	## convert to matrix and correct the DNA so that missing data is coded as NA
-	mymat <- as.matrix(as.character(fasta))
-	mymat[mymat == "?"] <- NA
-	mymat[mymat == "n"] <- NA
-	mymat[mymat == "-"] <- NA
+	cat("Calculating basic popgen stats for the fasta files (loci)\n")
+	allpops <- vector()
 
-
-	## set the populations to the order of the rows
-	## this requires that the fasta file have the same sample names as in the table
-	for (indiv in rownames(mymat)) {
-		if (! indiv %in% sample_table$V1) {
-			stop(help("Fasta sample missing from samples file! Stopping\n"), call. = FALSE)
-		}
-	}
-	populations <- sample_table$V2[match(rownames(mymat), sample_table$V1)]
-
-
-	## set up a summary dataframe to store the resulting calculation outputs
-	summary <- as.data.frame(matrix(ncol = 8, nrow = length(unique(populations))))
-	colnames(summary) <- c("Samples", "PercentMissing", "Ho", "Ho_SE", "He",
-		"He_SE", "Fis", "Fis_SE")
-	rownames(summary) <- unique(populations)
-
-
-	## cycle through populations and calculate stats
-	cat("Calculating and plotting basic popgen stats for the fasta\n")
+	## make a matrix to hold the results for each locus (Samples, Missing, Ho, He, Fis)
+	results <- matrix(ncol = 5, nrow = length(fasta_list))
 	index <- 1
-	for (pop in unique(populations)) {
-		cat("Analyzing population", index, "of", length(unique(populations)), "\n")
-		submat <- mymat[populations == pop, ]
 
-		### calculate population sample size and amount of missing data
-		summary[pop, "Samples"] <- nrow(submat)
-		summary[pop, "PercentMissing"] <- 100 * sum(is.na(submat)) / length(submat)
+	## cycle through the list of files
+	for (fasta in fasta_list) {
+		# if there are many files, report progress
+		if (index %% 1000 == 0) {
+			cat("Processed", index, "files of", as.character(length(fasta_list)))
+		}
 
-		### calculate observed heterozygosity
-		hets <- apply(submat, 2, het_measure)
-		summary[pop, "Ho"] <- mean(hets, na.rm = TRUE)
-		summary[pop, "Ho_SE"] <- stde(hets)
+		fasta_align <- read.dna(fasta, format = "fasta")
 
-		### calculate gene/nucleotide diversity (expected heterozygosity)
-		gened <- apply(submat, 2, gd_measure)
-		summary[pop, "He"] <- mean(gened, na.rm = TRUE)
-		summary[pop, "He_SE"] <- stde(gened)
+		### convert to matrix and correct the DNA so that missing data is coded as NA
+		mymat <- as.matrix(as.character(fasta_align))
+		mymat[mymat == "?"] <- NA
+		mymat[mymat == "n"] <- NA
+		mymat[mymat == "-"] <- NA
+
+		### check the individuals match the sample list
+		for (indiv in rownames(mymat)) {
+			if (! indiv %in% sample_table$V1) {
+				stop(help("Fasta sample missing from samples file! Stopping\n"), call. = FALSE)
+			}
+		}
+		populations <- sample_table$V2[match(rownames(mymat), sample_table$V1)]
+		if (length(unique(populations)) > 1) {
+				cat("WARNING: more than one population present in", fasta, "; stats will be wrong!\n")
+		}
+		allpops <- append(allpops, unique(populations))
+
+		### calculate stats
+		results[index, 1] <- nrow(mymat)			# samples
+		results[index, 2] <- 100 * sum(is.na(mymat)) / length(mymat)			# percent missing data
+		hets <- apply(mymat, 2, het_measure)			# observed heterozygosity across sites
+		results[index, 3] <- mean(hets, na.rm = TRUE)
+		gened <- apply(mymat, 2, gd_measure)			# expected heterozygosity across sites
+		results[index, 4] <- mean(gened, na.rm = TRUE)
 
 		### calculate the fixation index inbreeding coefficient Fis
 		### from Nei 1977: Fis = (He - Ho) / He = 1 - Ho / He
 		### Note: this only uses sites with non-zero gene diversity (He), not all sites
 		indices <- which(gened > 0)
-		fis <- 1 - hets[indices] / gened[indices]
-		summary[pop, "Fis"] <- mean(fis, na.rm = TRUE)
-		summary[pop, "Fis_SE"] <- stde(fis)
+		fis <- (gened[indices] - hets[indices]) / gened[indices]
+		results[index, 5] <- mean(fis, na.rm = TRUE)
 
-		### increment the pop index
+		### increment the index
 		index <- index + 1
 	}
 
+	## check populations across files
+	if (length(unique(allpops)) > 1) {
+		cat("WARNING: more than one population present across fasta files; stats will be wrong!\n")
+	}
+
+	## set up a summary dataframe to store the overall results
+	summary <- as.data.frame(matrix(ncol = 9, nrow = 1))
+	colnames(summary) <- c("Loci", "Samples", "PercentMissing", "Ho", "Ho_SE", "He",
+		"He_SE", "Fis", "Fis_SE")
+	rownames(summary) <- allpops[1]
+
+	## calculate overall results
+	summary[1, 1] <- length(fasta_list)			# num loci
+	summary[1, 2] <- mean(results[, 1])			# num samples
+	summary[1, 3] <- mean(results[, 2], na.rm = TRUE)			# missing data
+	summary[1, 4] <- mean(results[, 3], na.rm = TRUE)			# Ho observed heterozygosity
+	summary[1, 5] <- stde(results[, 3])			# Ho standard error
+	summary[1, 6] <- mean(results[, 4], na.rm = TRUE)			# He expected heterozygosity
+	summary[1, 7] <- stde(results[, 4])			# He standard error
+	summary[1, 8] <- mean(results[, 5], na.rm = TRUE)			# Fis
+	summary[1, 9] <- stde(results[, 5])			# Fis standard error
 
 	## export the table to file
 	write.table(summary, file = paste0(out_pref, "_summary_fasta.txt"),
 		quote = FALSE, row.names = TRUE)
-
-
-	## in the rare event there are NaN values in the summary, change them to zero for plotting
-	summary[is.na(summary)] <- 0
-
-
-	## Create plots
-	### start creating a pdf
-	pdf(paste0(out_pref, "_summary_fasta.pdf"), width = 10, height = 10)
-
-	### graph the sample sizes by pop
-	barplot(summary$Samples, las = 2, main = "Sample size",
-		names = rownames(summary))
-
-	### graph the amount of missing data
-	barplot(summary$PercentMissing, las = 2, main = "Percentage Missing",
-		names = rownames(summary))
-
-	### graph the values by population
-	mybarplot(summary$Ho, summary$Ho_SE, names = rownames(summary),
-		main = "Ho, observed heterozygosity")
-	mybarplot(summary$He, summary$He_SE, names = rownames(summary),
-		main = "He, estimated gene diversity\n(expected heterozygosity)")
-	mybarplot(summary$Fis, summary$Fis_SE, names = rownames(summary),
-		main = "Inbreeding coefficient Fis\n(1 - Ho / He)")
-
-	### stop creating the pdf
-	invisible(dev.off())
 }
