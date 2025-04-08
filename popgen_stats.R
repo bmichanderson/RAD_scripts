@@ -8,7 +8,8 @@
 # Description: calculate various popgen stats for a VCF file or a set of fasta alignments specified in a text file
 # Note:	either the VCF or fasta files must be present
 # Note: if specifying fasta input, it is assumed the alignments come from a single population
-#	(one set of stats calculated)
+#	(one set of stats calculated); the samples file can be used to designate which samples are of interest;
+#	other samples will be dropped from the fasta alignments
 ##########
 
 
@@ -260,7 +261,6 @@ if (vcf_present) {
 		}
 	}
 
-
 	## calculate amount of missing data, and average per pop
 	gt <- extract.gt(vcf, element = "GT")
 	missing <- apply(gt, MARGIN = 2, function(x) {
@@ -273,13 +273,11 @@ if (vcf_present) {
 	meanmiss <- tapply(missing, names(missing), mean)
 	sample_size <- table(names(missing))
 
-
 	## convert the VCF into a hierfstat dataframe with pop and genotype
 	geni <- vcfR2genind(vcf, return.alleles = TRUE)
 	populations <- sample_table$V2[match(rownames(geni@tab), sample_table$V1)]
 	geni@pop <- as.factor(populations)
 	my_hfst <- genind2hierfstat(geni)
-
 
 	## calculate basic stats and create a summary dataframe
 	cat("Calculating and plotting basic popgen stats for the VCF\n")
@@ -297,7 +295,6 @@ if (vcf_present) {
 		"Hs_SE", "Fis", "Fis_SE")
 	rownames(summary) <- colnames(bstats$Ho)
 
-
 	## populate the dataframe with values
 	summary[, "Samples"] <- sample_size
 	summary[, "PercentMissing"] <- meanmiss
@@ -308,15 +305,12 @@ if (vcf_present) {
 	summary[, "Fis"] <- apply(bstats$Fis, 2, function(x) mean(x, na.rm = TRUE))
 	summary[, "Fis_SE"] <- apply(bstats$Fis, 2, stde)
 
-
 	## export the table to file
 	write.table(summary, file = paste0(out_pref, "_summary_VCF.txt"),
 		quote = FALSE, row.names = TRUE)
 
-
 	## in the rare event there are NaN values in the summary, change them to zero for plotting
 	summary[is.na(summary)] <- 0
-
 
 	## Create plots
 	### start creating a pdf
@@ -340,7 +334,6 @@ if (vcf_present) {
 
 	### stop creating the pdf
 	invisible(dev.off())
-
 
 	## Run Fst calculations if requested
 	if (run_fst) {
@@ -396,31 +389,42 @@ if (fasta_present) {
 	index <- 1
 
 	## cycle through the list of files
+	incongruence <- FALSE
 	for (fasta in fasta_list) {
-		# if there are many files, report progress
+		### if there are many files, report progress
 		if (index %% 1000 == 0) {
-			cat("Processed", index, "files of", as.character(length(fasta_list)))
+			cat("Processed", index, "files of", as.character(length(fasta_list)), "\n")
 		}
 
+		### read in the alignment and convert to matrix
 		fasta_align <- read.dna(fasta, format = "fasta")
-
-		### convert to matrix and correct the DNA so that missing data is coded as NA
 		mymat <- as.matrix(as.character(fasta_align))
-		mymat[mymat == "?"] <- NA
-		mymat[mymat == "n"] <- NA
-		mymat[mymat == "-"] <- NA
 
-		### check the individuals match the sample list
+		### check and filter the alignment to samples in the sample table
+		drop_indices <- vector()
+		drop_index <- 1
 		for (indiv in rownames(mymat)) {
 			if (! indiv %in% sample_table$V1) {
-				stop(help("Fasta sample missing from samples file! Stopping\n"), call. = FALSE)
+				drop_indices <- append(drop_indices, drop_index)
 			}
+			drop_index <- drop_index + 1
 		}
+		if (length(drop_indices) > 0) {
+			incongruence <- TRUE
+			mymat <- mymat[-drop_indices, ]
+		}
+
+		### check there is one population left
 		populations <- sample_table$V2[match(rownames(mymat), sample_table$V1)]
 		if (length(unique(populations)) > 1) {
 				cat("WARNING: more than one population present in", fasta, "; stats will be wrong!\n")
 		}
 		allpops <- append(allpops, unique(populations))
+
+		### correct the DNA so that missing data is coded as NA
+		mymat[mymat == "?"] <- NA
+		mymat[mymat == "n"] <- NA
+		mymat[mymat == "-"] <- NA
 
 		### calculate stats
 		results[index, 1] <- nrow(mymat)			# samples
@@ -444,6 +448,11 @@ if (fasta_present) {
 	## check populations across files
 	if (length(unique(allpops)) > 1) {
 		cat("WARNING: more than one population present across fasta files; stats will be wrong!\n")
+	}
+
+	## report if there were extra samples not included in calculations
+	if (incongruence) {
+		cat("Samples were dropped from input alignments if missing from the samples table\n")
 	}
 
 	## set up a summary dataframe to store the overall results
