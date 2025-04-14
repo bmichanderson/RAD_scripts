@@ -2,6 +2,7 @@
 # Author: B.M. Anderson
 # Date: Nov–Dec 2023
 # Modified: Mar 2025 (added fasta input; updated Paris for polymorphic loci and per population; adjusted plotting)
+#	Apr 2025 (adjusted population distance calculations and reporting, and Paris reporting)
 # Description: evaluate multiple SNP datasets to optimise assembly parameters
 # Note: the minimum arguments are multiple VCF files (one per parameter combination)
 #	Optionally, provide text files to:
@@ -117,29 +118,33 @@ pop_dist <- function(vcfr, sampleids, pops) {
 	suppressMessages(library(ape))
 	suppressMessages(library(pofadinr))
 
-	### calculate distances for the VCF samples
-	dnabin <- suppressMessages(vcfR2DNAbin(vcfr, consensus = TRUE, extract.haps = FALSE))
-	temp <- as.character(dnabin)
-	temp[temp == "n"] <- "?"	# replace missing with a character recognised by pofadinr
-	dnabin <- as.DNAbin(temp)
-	distances <- dist.snp(dnabin, model = "GENPOFAD")
-	dist_mat <- as.matrix(distances)
-
-	### extract distances between individuals of the same population
+	### cycle through the populations, calculating distances
 	pop_names <- unique(pops)
 	dists <- vector()
 	index <- 1
+	cat(paste0("Population (of ", length(pop_names), "): "))
 	for (pop in pop_names) {
 		samples <- sampleids[pops == pop]
 		if (length(samples) < 2) {		# can't compute
+			cat(paste0("(", index, ") "))
+			index <- index + 1
 			next
 		}
-		sub_mat <- dist_mat[rownames(dist_mat) %in% samples, colnames(dist_mat) %in% samples]
-		sub_mat <- sub_mat[lower.tri(sub_mat)]		# keep lower triangle
+		cat(paste0(index, " "))
+		sub_vcfr <- vcfr[sample = samples]
+		dnabin <- suppressMessages(vcfR2DNAbin(sub_vcfr, consensus = TRUE, extract.haps = FALSE))
+		dnabin <- as.character(dnabin)
+		dnabin[dnabin == "n"] <- "?"	# replace missing with a character recognised by pofadinr
+		dnabin <- as.DNAbin(dnabin)
+		distances <- dist.snp(dnabin, model = "GENPOFAD")
+		dist_mat <- as.matrix(distances)
+		sub_mat <- dist_mat[lower.tri(dist_mat)]		# keep lower triangle
 		avg_dist <- mean(sub_mat)
 		dists[index] <- avg_dist
 		index <- index + 1
 	}
+	cat("\n")
+	### return the vector
 	dists
 }
 
@@ -356,15 +361,23 @@ for (vcf_file in catch_args) {
 		cat("Also assessing polymorphic loci shared by at least 80% of samples per population\n")
 		paris_pop_counts <- vector()
 		pop_names <- unique(keep_pops)
+		unused <- vector()
 		pop_index <- 1
 		for (pop in pop_names) {
 			samples <- keep_samples[keep_pops == pop]
-			if (length(samples) > 1) {
+			if (length(samples) > 4) {
 				subgenl <- genl[match(samples, genl@ind.names)]
 				paris_num_pop <- paris(subgenl)
 				paris_pop_counts[pop_index] <- paris_num_pop
 				pop_index <- pop_index + 1
+			} else {
+				unused <- append(unused, pop_names[pop_index])
+				pop_index <- pop_index + 1
 			}
+		}
+		if (length(unused) > 0) {
+			cat(paste0("The following populations had fewer than 5 individuals and were not used: ",
+				paste0(unused, collapse = " "), "\n"))
 		}
 		out_mat <- as.matrix(cbind(rep(params[index], length(paris_pop_counts)),
 			paris_pop_counts))
@@ -389,16 +402,7 @@ for (vcf_file in catch_args) {
 
 	## if there is a samples file, calculate within population distances
 	if (samples_present) {
-		suppressMessages(library(SNPfiltR))
 		cat("Calculating within population genetic (GENPOFAD) distances\n")
-		### make the vcfr smaller by removing samples
-		### note that vcfr objects have an extra row for format
-		### additionally, drop SNPs that are now monomorphic
-		indices <- match(keep_samples, genl@ind.names)
-		indices <- c(0, indices)
-		indices <- indices + 1
-		vcfr <- vcfr[is.biallelic(vcfr), indices]
-		vcfr <- min_mac(vcfr, min.mac = 1)
 		dists <- pop_dist(vcfr, keep_samples, keep_pops)
 		out_mat <- as.matrix(cbind(rep(params[index], length(dists)),
 			dists))
@@ -467,7 +471,7 @@ cat("\nPlotting...\n")
 # adjust margins to fit custom labels on x-axis
 par(mar = c(7, 4, 4, 1) + 0.1)
 
-## start the pdf
+# start the pdf
 pdf(paste0(out_pref, "_optim.pdf"), width = 10, height = 10)
 
 ## size
@@ -597,5 +601,5 @@ if (samples_present) {
 		labels = labels, xpd = TRUE)
 }
 
-## stop the pdf
+# stop the pdf
 invisible(dev.off)
