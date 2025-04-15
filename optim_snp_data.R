@@ -504,19 +504,21 @@ axis(1, at = seq_len(nrow(paris_mat)), labels = FALSE)
 text(seq_len(nrow(paris_mat)), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
 	labels = labels, xpd = TRUE)
 if (samples_present) {
+	paris_pop_mat[, 1] <- factor(paris_pop_mat[, 1], levels = unique(paris_pop_mat[, 1]))
 	boxplot(as.numeric(paris_pop_mat[, 2]) ~ paris_pop_mat[, 1],
 		main = "Number of polymorphic loci recovered in >= 80% of samples within each population",
 		ylim = c(0, max(as.numeric(paris_pop_mat[, 2]), na.rm = TRUE) * 1.05),
 		ylab = "Number of loci", xlab = "", xaxt = "n")
 	labels <- unique(paris_pop_mat[, 1])
-	yrange <- max(as.numeric(paris_pop_mat[, 2])) * 1.05
+	yrange <- max(as.numeric(paris_pop_mat[, 2]), na.rm = TRUE) * 1.05
 	axis(1, at = seq_len(length(unique(paris_pop_mat[, 1]))), labels = FALSE)
-	text(seq_len(length(unique((paris_mat[, 1])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
-		labels = labels, xpd = TRUE)
+	text(seq_len(length(unique((paris_pop_mat[, 1])))), par("usr")[3] - (0.03 * yrange),
+		srt = 45, adj = 1, labels = labels, xpd = TRUE)
 }
 
 ## heterozygosity
 if (ipyrad_present) {
+	het_stats[, 2] <- factor(het_stats[, 2], levels = unique(het_stats[, 2]))
 	boxplot(as.numeric(het_stats[, 3]) * 100 ~ het_stats[, 2],
 		ylim = c(0, max(as.numeric(het_stats[, 3]) * 100) * 1.05),
 		main = "Autosomal heterozygosity (ipyrad stats)\n(ambiguous bases in consensus sequences within samples)",
@@ -526,6 +528,8 @@ if (ipyrad_present) {
 	axis(1, at = seq_len(length(unique(het_stat[, 2]))), labels = FALSE)
 	text(seq_len(length(unique((het_stat[, 2])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
 		labels = labels, xpd = TRUE)
+
+	het_obs[, 2] <- factor(het_obs[, 2], levels = unique(het_obs[, 2]))
 	boxplot(as.numeric(het_obs[, 3]) * 100 ~ het_obs[, 2],
 		ylim = c(0, max(as.numeric(het_obs[, 3]) * 100) * 1.05),
 		main = "Observed SNP heterozygosity",
@@ -536,6 +540,7 @@ if (ipyrad_present) {
 	text(seq_len(length(unique((het_obs[, 2])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
 		labels = labels, xpd = TRUE)
 } else {
+	het_obs[, 2] <- factor(het_obs[, 2], levels = unique(het_obs[, 2]))
 	boxplot(as.numeric(het_obs[, 3]) * 100 ~ het_obs[, 2],
 		ylim = c(0, max(as.numeric(het_obs[, 3]) * 100) * 1.05),
 		main = "Observed SNP heterozygosity",
@@ -547,6 +552,7 @@ if (ipyrad_present) {
 		labels = labels, xpd = TRUE)
 }
 if (fasta_present) {
+	het_fas[, 2] <- factor(het_fas[, 2], levels = unique(het_fas[, 2]))
 	boxplot(as.numeric(het_fas[, 3]) * 100 ~ het_fas[, 2],
 		ylim = c(0, max(as.numeric(het_fas[, 3]) * 100) * 1.05),
 		main = "Observed autosomal heterozygosity (fasta file)",
@@ -560,6 +566,7 @@ if (fasta_present) {
 
 ## error
 if (reps_present) {
+	error_mat[, 1] <- factor(error_mat[, 1], levels = unique(error_mat[, 1]))
 	boxplot(as.numeric(error_mat[, 2]) ~ error_mat[, 1],
 		main = paste0("Locus error rates\n",
 			"(loci present in one rep but not the other, relative to total in either/both)"),
@@ -590,6 +597,7 @@ if (reps_present) {
 
 ## within population distances
 if (samples_present) {
+	dists_pop[, 1] <- factor(dists_pop[, 1], levels = unique(dists_pop[, 1]))
 	boxplot(as.numeric(dists_pop[, 2]) ~ dists_pop[, 1],
 		main = "Within Population Genetic Distances",
 		ylim = c(0, max(as.numeric(dists_pop[, 2]), na.rm = TRUE) * 1.05),
