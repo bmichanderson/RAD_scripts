@@ -9,7 +9,7 @@
 # Note:	either the VCF or fasta files must be present
 # Note: if specifying fasta input, it is assumed the alignments come from a single population
 #	(one set of stats calculated); the samples file can be used to designate which samples are of interest;
-#	other samples will be dropped from the fasta alignments
+#	other samples (if present) will be dropped from the fasta alignments
 ##########
 
 
@@ -55,7 +55,6 @@ help <- function(help_message) {
 
 ## a function to calculate standard error
 ### see: https://stackoverflow.com/questions/2676554/in-r-how-to-find-the-standard-error-of-the-mean
-### and: https://www.rdocumentation.org/packages/plotrix/versions/3.8-2/topics/std.error
 stde <- function(x) {
 	sqrt(var(x, na.rm = TRUE) / sum(!is.na(x)))
 }
@@ -94,18 +93,21 @@ het_measure <- function(x) {
 }
 
 
-## a function to calculate gene diversity for a fasta alignment
-### this is the average number of differences between sequences
+## a function to calculate gene/nucleotide diversity (pi) for a population
+### this represents the average number of differences between sequences
 ### or the probability of choosing an allele that is different
 ### or the expected heterozygosity
-### we can calculate this with either:
-### 1) Nei & Roychoudhury 1974:	pi = (n / n - 1) * (1 - sum[ (ni / n)^2 ])
-### or
-### 2) Hohenlohe et al. 2010: pi = 1 - sum[ (ni choose 2) / (n choose 2) ]
-### where ni = count of allele i in the sample; n = sum of all allele counts
-### Use Hohenlohe
+### Two formulas for calculating this use counts of alleles at a locus in a population
+### where ni = count of allele i, and n = sum of all allele counts
+### (assuming HWE)
+### 1) Nei & Roychoudhury 1974:	pi = n * (1 - sum[(ni / n)^2]) / (n - 1)
+### and
+### 2) Hohenlohe et al. 2010: pi = 1 - sum[(ni choose 2) / (n choose 2)]
+### The metric can be averaged across sites/loci, but separate estimates should be unlinked!
+### If there is complete inbreeding, the sample number should be individuals rather than loci
+### Use (2) Hohenlohe et al. 2010:
 gd_measure <- function(x) {
-	y <- x[!is.na(x)]		# only account for non NA
+	y <- x[!is.na(x)]		# remove missing
 	mylen <- length(y)
 	if (mylen == 0) {
 		NA
@@ -124,7 +126,7 @@ gd_measure <- function(x) {
 			counts[index] <- sum(alleles == allele)
 			index <- index + 1
 		}
-		# return the gene diversity
+		# return pi
 		1 - sum(nchoose2(counts)) / nchoose2(sum(counts))
 	}
 }
@@ -384,9 +386,18 @@ if (fasta_present) {
 	cat("Calculating basic popgen stats for the fasta files (loci)\n")
 	allpops <- vector()
 
-	## make a matrix to hold the results for each locus (Samples, Missing, Ho, He, Fis)
+	## make a matrix to hold the results for each locus and all samples (Samples, Missing, Ho, He, Fis)
 	results <- matrix(ncol = 5, nrow = length(fasta_list))
 	index <- 1
+
+	## make a second matrix to hold the results for each sample averaged across loci (Missing, Ho)
+	results_samp <- matrix(ncol = 2, nrow = nrow(sample_table))
+
+	## make a list of vectors, one per sample, to add to as fasta files are processed (Ho)
+	het_list <- vector("list")
+	for (het_index in seq_len(nrow(sample_table))) {
+		het_list[[het_index]] <- vector()
+	}
 
 	## cycle through the list of files
 	incongruence <- FALSE
@@ -419,14 +430,32 @@ if (fasta_present) {
 		if (length(unique(populations)) > 1) {
 				cat("WARNING: more than one population present in", fasta, "; stats will be wrong!\n")
 		}
-		allpops <- append(allpops, unique(populations))
+		allpops <- unique(c(allpops, populations))
 
 		### correct the DNA so that missing data is coded as NA
 		mymat[mymat == "?"] <- NA
 		mymat[mymat == "n"] <- NA
 		mymat[mymat == "-"] <- NA
 
-		### calculate stats
+		### check all samples are present; if there are missing, make NA rows
+		for (sample in sample_table$V1) {
+			if (! sample %in% rownames(mymat)) {
+				curr_names <- rownames(mymat)
+				mymat <- rbind(mymat, rep(NA, ncol(mymat)))
+				rownames(mymat) <- c(curr_names, sample)
+			}
+		}
+
+		### order the matrix by sample
+		mymat <- mymat[as.character(sample_table$V1), ]
+
+		### determine heterozygosity per sample
+		sample_hets <- apply(mymat, 1, het_measure)
+		for (het_index in seq_len(nrow(sample_table))) {
+			het_list[[het_index]] <- c(het_list[[het_index]], sample_hets[het_index])
+		}
+
+		### calculate stats across the population samples
 		results[index, 1] <- nrow(mymat)			# samples
 		results[index, 2] <- 100 * sum(is.na(mymat)) / length(mymat)			# percent missing data
 		hets <- apply(mymat, 2, het_measure)			# observed heterozygosity across sites
@@ -455,10 +484,16 @@ if (fasta_present) {
 		cat("Samples were dropped from input alignments if missing from the samples table\n")
 	}
 
+	## populate the samples results dataframe
+	for (samp_index in seq_len(nrow(sample_table))) {
+		results_samp[samp_index, 1] <- 100 * sum(is.na(het_list[[samp_index]])) / length(het_list[[samp_index]])
+		results_samp[samp_index, 2] <- mean(het_list[[samp_index]], na.rm = TRUE)
+	}
+
 	## set up a summary dataframe to store the overall results
-	summary <- as.data.frame(matrix(ncol = 9, nrow = 1))
+	summary <- as.data.frame(matrix(ncol = 12, nrow = 1))
 	colnames(summary) <- c("Loci", "Samples", "PercentMissing", "Ho", "Ho_SE", "He",
-		"He_SE", "Fis", "Fis_SE")
+		"He_SE", "Fis", "Fis_SE", "Missing_sample", "Ho_samples", "Ho_SE_samples")
 	rownames(summary) <- allpops[1]
 
 	## calculate overall results
@@ -471,6 +506,11 @@ if (fasta_present) {
 	summary[1, 7] <- stde(results[, 4])			# He standard error
 	summary[1, 8] <- mean(results[, 5], na.rm = TRUE)			# Fis
 	summary[1, 9] <- stde(results[, 5])			# Fis standard error
+
+	## and by samples
+	summary[1, 10] <- mean(results_samp[, 1], na.rm = TRUE)		# missing loci
+	summary[1, 11] <- mean(results_samp[, 2], na.rm = TRUE)		# Ho observed heterozygosity
+	summary[1, 12] <- stde(results_samp[, 2])		# Ho standard error
 
 	## export the table to file
 	write.table(summary, file = paste0(out_pref, "_summary_fasta.txt"),
