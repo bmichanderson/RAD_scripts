@@ -5,6 +5,7 @@
 # Modified: May 2022, Oct 2022 (combined with fasta), Oct 2023 (added Reich Fst),
 #	Mar 2025 (adjust Reich calcs and made a separate function; added argument to select Fst type; corrected boxplot)
 #	Apr 2025 (changed fasta behaviour to take a list of multiple files and average across; assume one population)
+#	Apr 2025 (added support for individual sample measures and adjusted output and calcs for more potential hets)
 # Description: calculate various popgen stats for a VCF file or a set of fasta alignments specified in a text file
 # Note:	either the VCF or fasta files must be present
 # Note: if specifying fasta input, it is assumed the alignments come from a single population
@@ -19,13 +20,6 @@ suppressMessages(library(ape))
 suppressMessages(library(adegenet))
 suppressMessages(library(hierfstat))
 suppressMessages(library(StAMPP))
-
-
-# Create an ambiguity code dataframe
-amb_df <- data.frame(matrix(nrow = 10, ncol = 2))
-rownames(amb_df) <-	c("a", "c", "g", "t", "k", "m", "r", "s", "w", "y")
-amb_df[, 1] <- 		c("a", "c", "g", "t", "g", "a", "a", "c", "a", "c")
-amb_df[, 2] <- 		c("a", "c", "g", "t", "t", "c", "g", "g", "t", "t")
 
 
 #####################
@@ -88,7 +82,7 @@ het_measure <- function(x) {
 	if (mylen == 0) {
 		NA
 	} else {
-		sum(! y %in% c("a", "c", "g", "t")) / mylen
+		sum(y %in% c("k", "m", "r", "s", "w", "y", "b", "d", "h", "v")) / mylen
 	}
 }
 
@@ -105,7 +99,15 @@ het_measure <- function(x) {
 ### 2) Hohenlohe et al. 2010: pi = 1 - sum[(ni choose 2) / (n choose 2)]
 ### The metric can be averaged across sites/loci, but separate estimates should be unlinked!
 ### If there is complete inbreeding, the sample number should be individuals rather than loci
-### Use (2) Hohenlohe et al. 2010:
+
+### Create an ambiguity code dataframe
+amb_df <- data.frame(matrix(nrow = 14, ncol = 3))
+rownames(amb_df) <-	c("a", "c", "g", "t", "k", "m", "r", "s", "w", "y", "b", "d", "h", "v")
+amb_df[, 1] <- 		c("a", "c", "g", "t", "g", "a", "a", "c", "a", "c", "c", "a", "a", "a")
+amb_df[, 2] <- 		c("a", "c", "g", "t", "t", "c", "g", "g", "t", "t", "g", "g", "c", "c")
+amb_df[, 3] <- 		c("", "", "", "", "", "", "", "", "", "", "t", "t", "t", "g")
+
+### Use (2) Hohenlohe et al. 2010 for the function:
 gd_measure <- function(x) {
 	y <- x[!is.na(x)]		# remove missing
 	mylen <- length(y)
@@ -113,12 +115,17 @@ gd_measure <- function(x) {
 		NA
 	} else {
 		# count alleles
-		alleles <- vector("character", mylen * 2)
+		alleles <- vector("character")
 		index <- 1
 		for (genotype in y) {
 			alleles[index] <- amb_df[genotype, 1]
 			alleles[index + 1] <- amb_df[genotype, 2]
-			index <- index + 2
+			if (genotype %in% c("b", "d", "h", "v")) {
+				alleles[index + 2] <- amb_df[genotype, 3]
+				index <- index + 3
+			} else {
+				index <- index + 2
+			}
 		}
 		counts <- vector("numeric", length(unique(alleles)))
 		index <- 1
@@ -292,14 +299,15 @@ if (vcf_present) {
 		bstats$Fis <- data.frame(bstats$Fis[, 1])
 		colnames(bstats$Ho) <- populations[1]
 	}
-	summary <- as.data.frame(matrix(ncol = 8, nrow = length(unique(populations))))
-	colnames(summary) <- c("Samples", "PercentMissing", "Ho", "Ho_SE", "Hs",
+	summary <- as.data.frame(matrix(ncol = 9, nrow = length(unique(populations))))
+	colnames(summary) <- c("Samples", "Loci", "PercentMissing", "Ho", "Ho_SE", "Hs",
 		"Hs_SE", "Fis", "Fis_SE")
 	rownames(summary) <- colnames(bstats$Ho)
 
 	## populate the dataframe with values
 	summary[, "Samples"] <- sample_size
-	summary[, "PercentMissing"] <- meanmiss
+	summary[, "SNPs"] <- nrow(bstats$Ho)
+	summary[, "Mean_percent_miss"] <- meanmiss
 	summary[, "Ho"] <- apply(bstats$Ho, 2, function(x) mean(x, na.rm = TRUE))
 	summary[, "Ho_SE"] <- apply(bstats$Ho, 2, stde)
 	summary[, "Hs"] <- apply(bstats$Hs, 2, function(x) mean(x, na.rm = TRUE))
@@ -319,11 +327,11 @@ if (vcf_present) {
 	pdf(paste0(out_pref, "_summary_VCF.pdf"), width = 10, height = 10)
 
 	### graph the sample sizes by pop
-	barplot(summary$Samples, las = 2, main = "Sample size",
+	barplot(summary$Samples, las = 2, main = "Samples",
 		names = rownames(summary))
 
 	### graph the amount of missing data
-	barplot(summary$PercentMissing, las = 2, main = "Mean percentage missing",
+	barplot(summary$Mean_percent_miss, las = 2, main = "Average missing (%)",
 		names = rownames(summary))
 
 	### graph the values by population
@@ -386,18 +394,28 @@ if (fasta_present) {
 	cat("Calculating basic popgen stats for the fasta files (loci)\n")
 	allpops <- vector()
 
-	## make a matrix to hold the results for each locus and all samples (Samples, Missing, Ho, He, Fis)
-	results <- matrix(ncol = 5, nrow = length(fasta_list))
-	index <- 1
+	## make a matrix to hold the results per locus (rows) for the population
+	## Columns:
+	## 1: number of samples for that locus
+	## 2: number of sites for that locus
+	## 3: number of polymorphic alignment positions for that locus
+	## 4: average percentage missing sites across samples for that locus
+	## 5: average observed heterozygosity for genotypes in that locus
+	## 6: average nucleotide diversity for sites in that locus
+	## 7: average inbreeding coefficient for sites in the locus
+	results <- matrix(0, ncol = 7, nrow = length(fasta_list))
+	colnames(results) <- c("Samples", "Sites", "Polymorphic", "Missing", "Ho", "pi", "Fis")
+	index <- 1		# track each locus
 
-	## make a second matrix to hold the results for each sample averaged across loci (Missing, Ho)
-	results_samp <- matrix(ncol = 2, nrow = nrow(sample_table))
-
-	## make a list of vectors, one per sample, to add to as fasta files are processed (Ho)
-	het_list <- vector("list")
-	for (het_index in seq_len(nrow(sample_table))) {
-		het_list[[het_index]] <- vector()
-	}
+	## make a second matrix to hold the measures for each sample
+	## Columns:
+	## 1: count of loci containing that sample
+	## 2: count of sites across loci containing that sample
+	## 3: count of polymorphic/heterozygous sites across loci containing that sample
+	## 4: count of missing sites across loci containing that sample
+	## 5: sum across loci of average observed heterozygosity across sites per locus
+	results_samp <- matrix(0, ncol = 5, nrow = nrow(sample_table))
+	colnames(results_samp) <- c("Loci", "Sites", "Polymorphic", "Missing", "Ho")
 
 	## cycle through the list of files
 	incongruence <- FALSE
@@ -438,39 +456,52 @@ if (fasta_present) {
 		mymat[mymat == "-"] <- NA
 
 		### check all samples are present; if there are missing, make NA rows
-		for (sample in sample_table$V1) {
+		samples_present <- 0
+		for (sample_index in seq_len(nrow(sample_table))) {
+			sample <- sample_table$V1[sample_index]
 			if (! sample %in% rownames(mymat)) {
 				curr_names <- rownames(mymat)
 				mymat <- rbind(mymat, rep(NA, ncol(mymat)))
 				rownames(mymat) <- c(curr_names, sample)
+			} else {
+				samples_present <- samples_present + 1
+				# increment the locus and site counts for present samples
+				results_samp[sample_index, "Loci"] <- results_samp[[sample_index, "Loci"]] + 1
+				results_samp[sample_index, "Sites"] <- results_samp[[sample_index, "Sites"]] + ncol(mymat)
 			}
 		}
 
-		### order the matrix by sample
+		### order the matrix by the sample table
 		mymat <- mymat[as.character(sample_table$V1), ]
 
-		### determine heterozygosity per sample
-		sample_hets <- apply(mymat, 1, het_measure)
-		for (het_index in seq_len(nrow(sample_table))) {
-			het_list[[het_index]] <- c(het_list[[het_index]], sample_hets[het_index])
-		}
+		### calculate stats per sample
+		polymorphic <- apply(mymat, 1, function(x) sum(x %in% c("k", "m", "r", "s", "w", "y", "b", "d", "h", "v")))
+		results_samp[, "Polymorphic"] <- results_samp[, "Polymorphic"] + polymorphic
+		missing <- rowSums(is.na(mymat))
+		missing[which(missing == ncol(mymat))] <- 0		# only count missing when not all NA (loci count)
+		results_samp[, "Missing"] <- results_samp[, "Missing"] + missing
+		hets <- polymorphic / (ncol(mymat) - missing)
+		results_samp[, "Ho"] <- results_samp[, "Ho"] + hets
 
 		### calculate stats across the population samples
-		results[index, 1] <- nrow(mymat)			# samples
-		results[index, 2] <- 100 * sum(is.na(mymat)) / length(mymat)			# percent missing data
-		hets <- apply(mymat, 2, het_measure)			# observed heterozygosity across sites
-		results[index, 3] <- mean(hets, na.rm = TRUE)
-		gened <- apply(mymat, 2, gd_measure)			# expected heterozygosity across sites
-		results[index, 4] <- mean(gened, na.rm = TRUE)
+		results[index, "Samples"] <- samples_present
+		results[index, "Sites"] <- ncol(mymat)
+		genotypes <- apply(mymat, 2, function(x) length(unique(x[!is.na(x)])))
+		results[index, "Polymorphic"] <- sum(genotypes > 1)
+		results[index, "Missing"] <- 100 * sum(is.na(mymat)) / length(mymat)
+		hets <- apply(mymat, 2, het_measure)		# observed heterozygosity across sites
+		results[index, "Ho"] <- mean(hets, na.rm = TRUE)
+		gened <- apply(mymat, 2, gd_measure)		# expected heterozygosity across sites
+		results[index, "pi"] <- mean(gened, na.rm = TRUE)
 
 		### calculate the fixation index inbreeding coefficient Fis
-		### from Nei 1977: Fis = (He - Ho) / He = 1 - Ho / He
-		### Note: this only uses sites with non-zero gene diversity (He), not all sites
+		### from Nei 1977: Fis = (pi - Ho) / pi
+		### Note: this only uses sites with non-zero gene diversity (pi), not all sites
 		indices <- which(gened > 0)
 		fis <- (gened[indices] - hets[indices]) / gened[indices]
-		results[index, 5] <- mean(fis, na.rm = TRUE)
+		results[index, "Fis"] <- mean(fis, na.rm = TRUE)
 
-		### increment the index
+		### increment the index and start on the next locus
 		index <- index + 1
 	}
 
@@ -484,33 +515,33 @@ if (fasta_present) {
 		cat("Samples were dropped from input alignments if missing from the samples table\n")
 	}
 
-	## populate the samples results dataframe
-	for (samp_index in seq_len(nrow(sample_table))) {
-		results_samp[samp_index, 1] <- 100 * sum(is.na(het_list[[samp_index]])) / length(het_list[[samp_index]])
-		results_samp[samp_index, 2] <- mean(het_list[[samp_index]], na.rm = TRUE)
-	}
-
 	## set up a summary dataframe to store the overall results
-	summary <- as.data.frame(matrix(ncol = 12, nrow = 1))
-	colnames(summary) <- c("Loci", "Samples", "PercentMissing", "Ho", "Ho_SE", "He",
-		"He_SE", "Fis", "Fis_SE", "Missing_sample", "Ho_samples", "Ho_SE_samples")
+	summary <- as.data.frame(matrix(ncol = 17, nrow = 1))
+	colnames(summary) <- c("Samples", "Loci", "Sites", "Polymorphic_pop", "Missing_percent",
+		"Ho", "Ho_se", "pi", "pi_se", "Fis", "Fis_se", "Samples_loci", "Samples_sites", "Samples_polymorphic",
+		"Samples_missing", "Samples_Ho", "Samples_Ho_se")
 	rownames(summary) <- allpops[1]
 
 	## calculate overall results
-	summary[1, 1] <- length(fasta_list)			# num loci
-	summary[1, 2] <- mean(results[, 1])			# num samples
-	summary[1, 3] <- mean(results[, 2], na.rm = TRUE)			# missing data
-	summary[1, 4] <- mean(results[, 3], na.rm = TRUE)			# Ho observed heterozygosity
-	summary[1, 5] <- stde(results[, 3])			# Ho standard error
-	summary[1, 6] <- mean(results[, 4], na.rm = TRUE)			# He expected heterozygosity
-	summary[1, 7] <- stde(results[, 4])			# He standard error
-	summary[1, 8] <- mean(results[, 5], na.rm = TRUE)			# Fis
-	summary[1, 9] <- stde(results[, 5])			# Fis standard error
+	summary[1, "Samples"] <- mean(results[, "Samples"])
+	summary[1, "Loci"] <- length(fasta_list)
+	summary[1, "Sites"] <- sum(results[, "Sites"])
+	summary[1, "Polymorphic_pop"] <- sum(results[, "Polymorphic"])
+	summary[1, "Missing_percent"] <- mean(results[, "Missing"], na.rm = TRUE)
+	summary[1, "Ho"] <- mean(results[, "Ho"], na.rm = TRUE)			# observed heterozygosity
+	summary[1, "Ho_se"] <- stde(results[, "Ho"])			# Ho standard error
+	summary[1, "pi"] <- mean(results[, "pi"], na.rm = TRUE)			# gene diversity or expected heterozygosity
+	summary[1, "pi_se"] <- stde(results[, "pi"])			# pi standard error
+	summary[1, "Fis"] <- mean(results[, "Fis"], na.rm = TRUE)			# inbreeding coefficient
+	summary[1, "Fis_se"] <- stde(results[, "Fis"])			# Fis standard error
 
-	## and by samples
-	summary[1, 10] <- mean(results_samp[, 1], na.rm = TRUE)		# missing loci
-	summary[1, 11] <- mean(results_samp[, 2], na.rm = TRUE)		# Ho observed heterozygosity
-	summary[1, 12] <- stde(results_samp[, 2])		# Ho standard error
+	summary[1, "Samples_loci"] <- mean(results_samp[, "Loci"])
+	summary[1, "Samples_sites"] <- mean(results_samp[, "Sites"])
+	summary[1, "Samples_polymorphic"] <- mean(results_samp[, "Polymorphic"])
+	summary[1, "Samples_missing"] <- mean(results_samp[, "Missing"])
+	heterozygosity <- results_samp[, "Ho"] / results_samp[, "Loci"]
+	summary[1, "Samples_Ho"] <- mean(heterozygosity, na.rm = TRUE)
+	summary[1, "Samples_Ho_se"] <- stde(heterozygosity)
 
 	## export the table to file
 	write.table(summary, file = paste0(out_pref, "_summary_fasta.txt"),
