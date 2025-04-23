@@ -20,10 +20,56 @@ from Bio.SeqRecord import SeqRecord
 
 
 # create a function for computing the consensus sequence of a list of aligned sequences
+# because the degenerate_consensus is behaving oddly, go back to the old approach
+# note: it was inserting a 'V' whenever the input position had only 'N' or non-ACGT
+# the current approach (below) will at least avoid this, though any lone non-ambiguity will be consensus
+# create an ambiguity dictionary
+amb_dict = {
+	'AC': 'M',
+	'AG': 'R',
+	'AT': 'W',
+	'CG': 'S',
+	'CT': 'Y',
+	'GT': 'K',
+	'ACG': 'V',
+	'ACT': 'H',
+	'AGT': 'D',
+	'CGT': 'B',
+	'ACGT': 'N'
+}
+
 def make_consensus(seq_list, locus_num):
-	mymotif = motifs.create(seq_list)
-	consensus = mymotif.degenerate_consensus
-	return(SeqRecord(consensus, id = str(locus_num), name = str(locus_num), description = str(locus_num)))
+#	mymotif = motifs.create(seq_list)
+#	consensus = mymotif.degenerate_consensus
+	con_list = []
+	for position in range(len(seq_list[0])):
+		align_slice = [entry[position] for entry in seq_list]
+		bases = [base for base in align_slice if base not in ['-', 'N']]
+		base_list = []
+		if len(bases) != 0:
+			if bases.count('A') > 0:
+				base_list.append('A')
+			if bases.count('C') > 0:
+				base_list.append('C')
+			if bases.count('G') > 0:
+				base_list.append('G')
+			if bases.count('T') > 0:
+				base_list.append('T')
+
+			if len(base_list) == 1:
+				con_list.append(base_list[0])
+			elif len(base_list) > 1:
+				con_list.append(amb_dict[''.join(base_list)])
+			else:		# position only contains ambiguities
+				# for simplicity, just return the first one (this isn't a true consensus)
+				con_list.append(bases[0])
+
+		elif 'N' in align_slice:
+			con_list.append('N')
+		else:
+			con_list.append('-')
+
+	return(SeqRecord(Seq(''.join(con_list)), id = str(locus_num), name = str(locus_num), description = str(locus_num)))
 
 
 # instantiate the parser
