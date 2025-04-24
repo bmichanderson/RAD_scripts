@@ -2,7 +2,7 @@
 # Author: B.M. Anderson
 # Date: Nov–Dec 2023
 # Modified: Mar 2025 (added fasta input; updated Paris for polymorphic loci and per population; adjusted plotting)
-#	Apr 2025 (adjusted population distance calculations and reporting, and Paris reporting)
+#	Apr 2025 (adjusted population distance calculations and reporting, and Paris reporting; adjusted het site calc)
 # Description: evaluate multiple SNP datasets to optimise assembly parameters
 # Note: the minimum arguments are multiple VCF files (one per parameter combination)
 #	Optionally, provide text files to:
@@ -166,7 +166,7 @@ het_measure <- function(x) {
 	if (mylen == 0) {
 		NA
 	} else {
-		sum(! y %in% c("a", "c", "g", "t")) / mylen
+		sum(y %in% c("k", "m", "r", "s", "w", "y", "b", "d", "h", "v")) / mylen
 	}
 }
 
