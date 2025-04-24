@@ -5,7 +5,8 @@
 # Modified: May 2022, Oct 2022 (combined with fasta), Oct 2023 (added Reich Fst),
 #	Mar 2025 (adjust Reich calcs and made a separate function; added argument to select Fst type; corrected boxplot)
 #	Apr 2025 (changed fasta behaviour to take a list of multiple files and average across; assume one population)
-#	Apr 2025 (added support for individual sample measures and adjusted output and calcs for more potential hets)
+#	Apr 2025 (added individual sample measures; adjusted output and calcs for more potential hets; added weighting)
+#	Apr 2025 (added argument to make plotting optional)
 # Description: calculate various popgen stats for a VCF file or a set of fasta alignments specified in a text file
 # Note:	either the VCF or fasta files must be present
 # Note: if specifying fasta input, it is assumed the alignments come from a single population
@@ -41,6 +42,7 @@ help <- function(help_message) {
 		cat("\t-t\tRun pairwise Fst calculations between populations (only for VCF) [default: do not]\n")
 		cat("\t-r\tType of Fst calculation: \"s\" for StAMPP Weir and Cockerham 1984 or",
 			"\"r\" for Reich et al. 2009 [default: both]\n")
+		cat("\t-p\tPlot results for the VCF file [\"yes\" [default] or \"no\"]\n")
 	} else {
 		cat(help_message)
 	}
@@ -202,6 +204,7 @@ if (length(args) == 0) { # nolint
 	samples_present <- FALSE
 	run_fst <- FALSE
 	type_fst <- "both"
+	plot <- "yes"
 	for (index in seq_len(length(args))) {
 		if (args[index] == "-o") {
 			out_pref <- args[index + 1]
@@ -223,6 +226,9 @@ if (length(args) == 0) { # nolint
 			cat("Will run Fst calculations\n")
 		} else if (args[index] == "-r") {
 			type_fst <- as.character(args[index + 1])
+		} else if (args[index] == "-p") {
+			plot <- args[index + 1]
+			catch <- FALSE
 		} else {
 			if (catch) {
 				catch_args[extra] <- args[index]
@@ -272,10 +278,7 @@ if (vcf_present) {
 
 	## calculate amount of missing data, and average per pop
 	gt <- extract.gt(vcf, element = "GT")
-	missing <- apply(gt, MARGIN = 2, function(x) {
-			sum(is.na(x))
-		}
-	)
+	missing <- apply(gt, MARGIN = 2, function(x) sum(is.na(x)))
 	missing <- 100 * missing / nrow(vcf)
 	misspops <- sample_table$V2[match(names(missing), sample_table$V1)]
 	names(missing) <- misspops
@@ -289,7 +292,7 @@ if (vcf_present) {
 	my_hfst <- genind2hierfstat(geni)
 
 	## calculate basic stats and create a summary dataframe
-	cat("Calculating and plotting basic popgen stats for the VCF\n")
+	cat("Calculating basic popgen stats for the VCF\n")
 	bstats <- basic.stats(my_hfst)
 	### if there was only one pop, hierfst adds a dummy pop,
 	### which breaks my code, so only keep the first column
@@ -300,20 +303,20 @@ if (vcf_present) {
 		colnames(bstats$Ho) <- populations[1]
 	}
 	summary <- as.data.frame(matrix(ncol = 9, nrow = length(unique(populations))))
-	colnames(summary) <- c("Samples", "Loci", "PercentMissing", "Ho", "Ho_SE", "Hs",
-		"Hs_SE", "Fis", "Fis_SE")
+	colnames(summary) <- c("Samples", "SNPs", "Missing_percent", "Ho", "Ho_se", "Hs",
+		"Hs_se", "Fis", "Fis_se")
 	rownames(summary) <- colnames(bstats$Ho)
 
 	## populate the dataframe with values
 	summary[, "Samples"] <- sample_size
 	summary[, "SNPs"] <- nrow(bstats$Ho)
-	summary[, "Mean_percent_miss"] <- meanmiss
+	summary[, "Missing_percent"] <- meanmiss
 	summary[, "Ho"] <- apply(bstats$Ho, 2, function(x) mean(x, na.rm = TRUE))
-	summary[, "Ho_SE"] <- apply(bstats$Ho, 2, stde)
+	summary[, "Ho_se"] <- apply(bstats$Ho, 2, stde)
 	summary[, "Hs"] <- apply(bstats$Hs, 2, function(x) mean(x, na.rm = TRUE))
-	summary[, "Hs_SE"] <- apply(bstats$Hs, 2, stde)
+	summary[, "Hs_se"] <- apply(bstats$Hs, 2, stde)
 	summary[, "Fis"] <- apply(bstats$Fis, 2, function(x) mean(x, na.rm = TRUE))
-	summary[, "Fis_SE"] <- apply(bstats$Fis, 2, stde)
+	summary[, "Fis_se"] <- apply(bstats$Fis, 2, stde)
 
 	## export the table to file
 	write.table(summary, file = paste0(out_pref, "_summary_VCF.txt"),
@@ -323,27 +326,30 @@ if (vcf_present) {
 	summary[is.na(summary)] <- 0
 
 	## Create plots
-	### start creating a pdf
-	pdf(paste0(out_pref, "_summary_VCF.pdf"), width = 10, height = 10)
+	if (plot == "yes") {
+		cat("Plotting...\n")
+		### start creating a pdf
+		pdf(paste0(out_pref, "_summary_VCF.pdf"), width = 10, height = 10)
 
-	### graph the sample sizes by pop
-	barplot(summary$Samples, las = 2, main = "Samples",
-		names = rownames(summary))
+		### graph the sample sizes by pop
+		barplot(summary$Samples, las = 2, main = "Samples",
+			names = rownames(summary))
 
-	### graph the amount of missing data
-	barplot(summary$Mean_percent_miss, las = 2, main = "Average missing (%)",
-		names = rownames(summary))
+		### graph the amount of missing data
+		barplot(summary$Mean_percent_miss, las = 2, main = "Average missing (%)",
+			names = rownames(summary))
 
-	### graph the values by population
-	mybarplot(summary$Ho, summary$Ho_SE, names = rownames(summary),
-		main = "Ho, observed heterozygosity")
-	mybarplot(summary$Hs, summary$Hs_SE, names = rownames(summary),
-		main = "Hs, estimated gene diversity\n(expected heterozygosity)")
-	mybarplot(summary$Fis, summary$Fis_SE, names = rownames(summary),
-		main = "Inbreeding coefficient Fis\n(1 - Ho / Hs)")
+		### graph the values by population
+		mybarplot(summary$Ho, summary$Ho_SE, names = rownames(summary),
+			main = "Ho, observed heterozygosity")
+		mybarplot(summary$Hs, summary$Hs_SE, names = rownames(summary),
+			main = "Hs, estimated gene diversity\n(expected heterozygosity)")
+		mybarplot(summary$Fis, summary$Fis_SE, names = rownames(summary),
+			main = "Inbreeding coefficient Fis\n(1 - Ho / Hs)")
 
-	### stop creating the pdf
-	invisible(dev.off())
+		### stop creating the pdf
+		invisible(dev.off())
+	}
 
 	## Run Fst calculations if requested
 	if (run_fst) {
@@ -484,22 +490,34 @@ if (fasta_present) {
 		results_samp[, "Ho"] <- results_samp[, "Ho"] + hets
 
 		### calculate stats across the population samples
+		### since this is by site, weight the values by sampling for the locus average
 		results[index, "Samples"] <- samples_present
 		results[index, "Sites"] <- ncol(mymat)
-		genotypes <- apply(mymat, 2, function(x) length(unique(x[!is.na(x)])))
-		results[index, "Polymorphic"] <- sum(genotypes > 1)
-		results[index, "Missing"] <- 100 * sum(is.na(mymat)) / length(mymat)
+		count_gen <- apply(mymat, 2, function(x) length(unique(x[!is.na(x)])))
+		single_mat <- mymat[, which(count_gen == 1)]
+		genotypes <- apply(single_mat, 2, function(x) unique(x[!is.na(x)]))
+		polymorphic <- sum(genotypes %in% c("k", "m", "r", "s", "w", "y", "b", "d", "h", "v"))
+		results[index, "Polymorphic"] <- sum(count_gen > 1) + polymorphic
+		miss <- apply(mymat, 2, function(x) sum(is.na(x)))
+		results[index, "Missing"] <- 100 * sum(miss) / length(mymat)
 		hets <- apply(mymat, 2, het_measure)		# observed heterozygosity across sites
-		results[index, "Ho"] <- mean(hets, na.rm = TRUE)
+		weight <- nrow(mymat) - miss - 1		# weight by n - 1, where n = observed genotypes
+		weighted <- weight * hets
+		results[index, "Ho"] <- sum(weighted, na.rm = TRUE) / sum(weight)
 		gened <- apply(mymat, 2, gd_measure)		# expected heterozygosity across sites
-		results[index, "pi"] <- mean(gened, na.rm = TRUE)
+		weight <- (nrow(mymat) - miss) * 2 - 1		# weight by n - 1, where n = counted alleles
+		weighted <- weight * gened
+		results[index, "pi"] <-  sum(weighted, na.rm = TRUE) / sum(weight)
 
 		### calculate the fixation index inbreeding coefficient Fis
 		### from Nei 1977: Fis = (pi - Ho) / pi
 		### Note: this only uses sites with non-zero gene diversity (pi), not all sites
 		indices <- which(gened > 0)
 		fis <- (gened[indices] - hets[indices]) / gened[indices]
-		results[index, "Fis"] <- mean(fis, na.rm = TRUE)
+		miss_fis <- miss[indices]
+		weight <- nrow(mymat) - miss_fis - 1		# weight by n - 1, where n = observed genotypes contributing to the estimate
+		weighted <- weight * fis
+		results[index, "Fis"] <- sum(weighted, na.rm = TRUE) / sum(weight)
 
 		### increment the index and start on the next locus
 		index <- index + 1
