@@ -143,7 +143,7 @@ snps_remain <- nLoc(filtered_genl)
 ```
 
 Remove SNPs found in less than a proportion of samples  
-(do not use this if wanting to estimate autosomal stats per population later)
+(do not use this here if wanting to estimate diversity stats per population later)
 ```{r}
 filtered_genl <- gl.filter.callrate(filtered_genl, method = "loc", threshold = 0.95)
 diff <- snps_remain - nLoc(filtered_genl)
@@ -156,7 +156,7 @@ snps_remain <- nLoc(filtered_genl)
 Filter based on minor allele frequency  
 (if a value > 1 is used, it is interpreted as minor allele count;  
 this is preferable for a dataset of multiple populations)  
-(do not use this if wanting to calculate autosomal stats later)
+(do not use this if wanting to calculate diversity stats later)
 ```{r}
 filtered_genl <- gl.filter.maf(filtered_genl, threshold = 3)
 diff <- snps_remain - nLoc(filtered_genl)
@@ -177,7 +177,7 @@ snps_remain <- nLoc(filtered_genl)
 ```
 
 Remove monomorphic and fully NA loci (if any are left)  
-(do not use this if wanting to estimate autosomal stats later)
+(do not use this if wanting to estimate diversity stats later)
 ```{r}
 filtered_genl <- gl.filter.monomorphs(filtered_genl)
 diff <- snps_remain - nLoc(filtered_genl)
@@ -189,7 +189,7 @@ snps_remain <- nLoc(filtered_genl)
 
 If doing analyses sensitive to linkage (e.g. Structure), drop secondary SNPs  
 Can also do this with `method = "random"`  
-(Note: if wanting to calculate autosomal population heterozygosity stats, keep these!)
+(do not use this if wanting to calculate autosomal diversity stats later)
 ```{r}
 filtered_genl <- gl.filter.secondaries(filtered_genl, method = "best")
 diff <- snps_remain - nLoc(filtered_genl)
@@ -204,7 +204,7 @@ The threshold (default 0.2) needs to consider the length of a tag (69 bp)
 Assume that if there are fewer than c. 8 bp differences, it is the same locus  
 The threshold is then 8/69 = c. 0.12  
 This can take a long time (not recommended if > 20 k SNPs remain; may have to run overnight)  
-(do not use this if wanting autosomal stats later)
+(do not use this if wanting to calculate diversity stats later)
 ```{r}
 filtered_genl <- gl.filter.hamming(filtered_genl, tag.length = 69, rs = 5,
 	threshold = 0.12, pb = TRUE)
@@ -402,97 +402,17 @@ Check sample coverage
 summary(pop_genl$pop)
 ```
 
-## SNP or autosomal stats estimates
+## Pairwise Fst and IBD
 Drop individuals if necessary
 ```{r}
-drops <- read.table("drop_samples_diversity.txt", header = FALSE)[, 1]
+drops <- read.table("drop_samples_fst.txt", header = FALSE)[, 1]
 pop_genl <- gl.drop.ind(pop_genl, drops, mono.rm = TRUE, recalc = TRUE)
 cat(paste0("Filtered to a genlight of ", nInd(pop_genl), " individuals and ",
 	nLoc(pop_genl), " SNPs\n"))
 snps_remain <- nLoc(pop_genl)
 ```
 
-Drop populations if necessary
-```{r}
-drops <- read.table("drop_pops.txt", header = FALSE)[, 1]
-pop_genl <- gl.drop.pop(pop_genl, drops, mono.rm = TRUE, recalc = TRUE)
-cat(paste0("Filtered to a genlight of ", nInd(pop_genl), " individuals and ",
-	nLoc(pop_genl), " SNPs\n"))
-snps_remain <- nLoc(pop_genl)
-```
-
-Estimate basic SNP stats
-```{r}
-stde <- function(x) {
-	sqrt(var(x, na.rm = TRUE) / sum(!is.na(x)))
-}
-bstats <- utils.basic.stats(pop_genl)
-summary <- as.data.frame(matrix(ncol = 6, nrow = length(unique(pop_genl$pop))))
-colnames(summary) <- c("Ho", "Ho_SE", "Hs", "Hs_SE", "Fis", "Fis_SE")
-rownames(summary) <- colnames(bstats$Ho)
-summary[, "Ho"] <- apply(bstats$Ho, 2, function(x) mean(x, na.rm = TRUE))
-summary[, "Ho_SE"] <- apply(bstats$Ho, 2, stde)
-summary[, "Hs"] <- apply(bstats$Hs, 2, function(x) mean(x, na.rm = TRUE))
-summary[, "Hs_SE"] <- apply(bstats$Hs, 2, stde)
-summary[, "Fis"] <- apply(bstats$Fis, 2, function(x) mean(x, na.rm = TRUE))
-summary[, "Fis_SE"] <- apply(bstats$Fis, 2, stde)
-```
-
-Or estimate autosomal heterozygosity  
-Note: this requires that secondaries have not been filtered out  
-To ensure no missing data, each population needs to be filtered separately  
-Only loci found in all samples in that population will be kept  
-Note: the function will not report Fis for autosomal(!) so it uses normal calcs
-```{r}
-pops <- sort(unique(pop_genl$pop))
-summary <- as.data.frame(matrix(ncol = 7, nrow = length(pops)))
-colnames(summary) <- c("Loci", "Ho", "Ho_SE", "Hs", "Hs_SE", "Fis", "Fis_SE")
-rownames(summary) <- pops
-for (pop in pops) {
-	sub_genl <- gl.keep.pop(pop_genl, pop, mono.rm = TRUE, recalc = TRUE)
-	sub_genl <- gl.filter.callrate(sub_genl, method = "loc", threshold = 1)
-	get_invariant <- gl.report.secondaries(sub_genl)
-	stats <- gl.report.heterozygosity(sub_genl, n.invariant = get_invariant[7, 2])
-	summary[pop, "Loci"] <- stats[1, "n.Loc"]
-	summary[pop, "Ho"] <- stats[1, "Ho.adj"]
-	summary[pop, "Ho_SE"] <- stats[1, "Ho.adjSE"]
-	summary[pop, "Hs"] <- stats[1, "He.adj"]
-	summary[pop, "Hs_SE"] <- stats[1, "He.adjSE"]
-	stats2 <- gl.report.heterozygosity(sub_genl, n.invariant = 0)
-	summary[pop, "Fis"] <- stats2[1, "FIS"]
-	summary[pop, "Fis_SE"] <- stats2[1, "FISSE"]
-}
-```
-
-Write to file
-```{r}
-write.table(summary, file = paste0("popgen_basic_stats.txt"),
-	quote = FALSE, row.names = TRUE)
-```
-
-Plot basic stats to pdf
-```{r}
-mybarplot <- function(data_val, data_se, names, main) {
-	myplot <- barplot(data_val, names = names, las = 2,
-		main = main,
-		ylim = c(min(c(0, 1.2 * (data_val - data_se * 2))),
-			max(0, 1.2 * max(data_val + data_se * 2))))
-	arrows(myplot, y0 = data_val + data_se * 2, y1 = data_val - data_se * 2,
-		angle = 90, code = 3, length = 0.1)
-}
-
-pdf("popgen_basic_stats.pdf", width = 10, height = 10)
-mybarplot(summary$Ho, summary$Ho_SE, names = rownames(summary),
-	main = "Ho, observed heterozygosity")
-mybarplot(summary$Hs, summary$Hs_SE, names = rownames(summary),
-	main = "Hs, estimated gene diversity\n(expected heterozygosity)")
-mybarplot(summary$Fis, summary$Fis_SE, names = rownames(summary),
-		main = "Inbreeding coefficient Fis\n(1 - Ho / Hs)")
-invisible(dev.off())
-```
-
-## Pairwise Fst and IBD
-Estimate pairwise Fst with StAMPP and write to file
+Calculate pairwise Fst with StAMPP and write to file
 ```{r}
 fsts <- gl.fst.pop(pop_genl, nboots = 1)
 ### export the pairwise Fst values to file
@@ -515,4 +435,97 @@ pop_genl_subset <- gl.drop.pop(pop_genl, drops, mono.rm = TRUE, recalc = TRUE)
 cat(paste0("Filtered to a genlight of ", nInd(pop_genl_subset), " individuals and ",
 	nLoc(pop_genl_subset), " SNPs\n"))
 snps_remain <- nLoc(pop_genl_subset)
+```
+
+## Autosomal/SNP diversity stats
+Ensure that filtering prior to this is appropriate for autosomal measures, namely:
+- secondaries are present  
+- monomorphic loci are present  
+- loci will be completely present (no missing) per population being considered  
+
+Drop individuals
+```{r}
+drops <- read.table("drop_samples_diversity.txt", header = FALSE)[, 1]
+pop_genl <- gl.drop.ind(pop_genl, drops, mono.rm = FALSE, recalc = TRUE)
+cat(paste0("Filtered to a genlight of ", nInd(pop_genl), " individuals and ",
+	nLoc(pop_genl), " SNPs\n"))
+snps_remain <- nLoc(pop_genl)
+```
+
+Autosomal/SNP heterozygosity  
+To ensure no missing data, each population needs to be filtered separately  
+Only loci found in all samples in that population will be kept (zero missing data)  
+Note: currently, the function will not report Fis for autosomal(!)
+```{r}
+stde <- function(x) {
+	sqrt(var(x, na.rm = TRUE) / sum(!is.na(x)))
+}
+
+pops <- sort(unique(pop_genl$pop))
+summary <- as.data.frame(matrix(ncol = 15, nrow = length(pops)))
+colnames(summary) <- c("Samples", "Loci_auto", "Ho_auto", "Ho_auto_se", "He_auto", "He_auto_se",
+	"Loci_SNPs", "Poly_SNPs", "Mono_SNPs", "Ho_SNP", "Ho_SNP_se", "He_SNP", "He_SNP_se", "Fis", "Fis_se")
+rownames(summary) <- pops
+for (pop in pops) {
+	# subset and calculate autosomal stats
+	sub_genl <- gl.keep.pop(pop_genl, pop, mono.rm = FALSE, recalc = TRUE)
+	sub_genl <- gl.filter.callrate(sub_genl, method = "loc", threshold = 1)
+	get_invariant <- gl.report.secondaries(sub_genl)
+	stats <- gl.report.heterozygosity(sub_genl, n.invariant = get_invariant[7, 2])
+	summary[pop, "Samples"] <- nInd(sub_genl)
+	summary[pop, "Loci_auto"] <- stats[1, "n.Loc"]
+	summary[pop, "Ho_auto"] <- stats[1, "Ho.adj"]
+	summary[pop, "Ho_auto_se"] <- stats[1, "Ho.adjSE"]
+	summary[pop, "He_auto"] <- stats[1, "He.adj"]
+	summary[pop, "He_auto_se"] <- stats[1, "He.adjSE"]
+
+	# calculate stats from the equivalent unlinked SNPs
+	filt_sub_genl <- gl.filter.secondaries(sub_genl, method = "best")
+	snp_stats <- gl.report.heterozygosity(filt_sub_genl, n.invariant = 0)
+	summary[pop, "Loci_SNPs"] <- snp_stats[1, "n.Loc"]
+	summary[pop, "Poly_SNPs"] <- snp_stats[1, "polyLoc"]
+	summary[pop, "Mono_SNPs"] <- snp_stats[1, "monoLoc"]
+	summary[pop, "Ho_SNP"] <- snp_stats[1, "Ho"]
+	summary[pop, "Ho_SNP_se"] <- snp_stats[1, "HoSE"]
+	summary[pop, "He_SNP"] <- snp_stats[1, "uHe"]
+	summary[pop, "He_SNP_se"] <- snp_stats[1, "uHeSE"]
+
+	# the dartR package has a bug that doesn't remove NA from standard error
+	# filter out non-variant to address this and grab the Fis (doesn't change)
+	filt_sub_genl <- gl.filter.monomorphs(filt_sub_genl)
+	snp_stats <- gl.report.heterozygosity(filt_sub_genl, n.invariant = 0)
+	summary[pop, "Fis"] <- snp_stats[1, "FIS"]
+	summary[pop, "Fis_se"] <- snp_stats[1, "FISSE"]
+}
+```
+
+Write to file
+```{r}
+write.table(summary, file = paste0("popgen_diversity_stats.txt"),
+	quote = FALSE, row.names = TRUE)
+```
+
+Plot diversity stats to pdf
+```{r}
+mybarplot <- function(data_val, data_se, names, main) {
+	myplot <- barplot(data_val, names = names, las = 2,
+		main = main,
+		ylim = c(min(c(0, 1.2 * (data_val - data_se * 2))),
+			max(0, 1.2 * max(data_val + data_se * 2))))
+	arrows(myplot, y0 = data_val + data_se * 2, y1 = data_val - data_se * 2,
+		angle = 90, code = 3, length = 0.1)
+}
+
+pdf("popgen_diversity_stats.pdf", width = 10, height = 10)
+mybarplot(summary$Ho_auto, summary$Ho_auto_se, names = rownames(summary),
+	main = "Autosomal observed heterozygosity (Ho)")
+mybarplot(summary$Ho_SNP, summary$Ho_SNP_se, names = rownames(summary),
+	main = "SNP observed heterozygosity (Ho)")
+mybarplot(summary$He_auto, summary$He_auto_se, names = rownames(summary),
+	main = "Autosomal expected heterozygosity (He)")
+mybarplot(summary$He_SNP, summary$He_SNP_se, names = rownames(summary),
+	main = "SNP unbiased expected heterozygosity (uHe)")
+mybarplot(summary$Fis, summary$Fis_se, names = rownames(summary),
+		main = "Inbreeding coefficient Fis\n(1 - Ho / uHe)")
+invisible(dev.off())
 ```
