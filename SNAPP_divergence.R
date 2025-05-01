@@ -1,9 +1,9 @@
 
 ##########
-# Author: Ben Anderson
-# Date: April 2022
+# Author: B.M. Anderson
+# Date: April 2022; May 2025 (cleaned up and adjusted calculations)
 # Description: assess tree height and population divergences for setting priors for SNAPP/ER
-# NOTE: the input Nexus file can be produced with `vcf_to_nexus.py`
+# Note: the input Nexus file can be produced with `vcf_to_nexus.py`
 ##########
 
 
@@ -17,7 +17,7 @@ suppressMessages(library(ape))
 help <- function(help_message) {
 	if (missing(help_message)) {
 		cat("A script to assess divergences in a SNAPP/ER input Nexus file\n")
-		cat("Usage: Rscript SNAPP_divergence.R -s SNAPP/ER_infile.nex -p pops_file\n")
+		cat("Usage: Rscript SNAPP_divergence.R -s {SNAPP/ER_infile.nex} -p {pops_file}\n")
 		cat("Options:\n")
 		cat("\t-s\tSNAPP/ER input Nexus file\n")
 		cat("\t-p\tPopulations file, with sampleID and population tab-separated, one per line\n")
@@ -27,42 +27,46 @@ help <- function(help_message) {
 }
 
 
-# a function to calculate pairwise sequence divergence from 012 data
-# NOTE: this is calculated only on SNPs (if using that), so values are high
-# it compares each row of a dataframe to every other row
-# it sums absolute distances (a "1" vs "0", "1", "2" = distance of 1, 0, 1)
-# missing data ("?") is ignored (sites dropped for that comparison)
-# it then calculates substitutions per site by dividing by number of comparisons
-# it returns a distance matrix
-seq_div <- function(align_df) {
-	out_mat <- matrix(nrow = nrow(align_df), ncol = nrow(align_df))
-	rownames(out_mat) <- rownames(align_df)
-	colnames(out_mat) <- rownames(align_df)
+# A function to calculate pairwise sequence divergence from 012 data
+# Note: this is calculated only on SNPs (if using that), so values are high
+# It compares each row to every other row, and sums absolute distances
+# For example, if the SNP is "1", then "0", "1", and "2" = distances of 1, 0, and 1
+# Missing data ("?") is ignored (sites dropped for that comparison)
+# It then calculates substitutions per site by dividing by number of comparisons
+# The argument is a matrix with samples as rows and SNPs as columns
+# Returns a (lower tri) matrix with substitutions per site between samples (rows and columns)
+sequence_diversity <- function(snp_mat) {
+	missing <- vector("numeric")
+	out_mat <- matrix(nrow = nrow(snp_mat), ncol = nrow(snp_mat))
+	rownames(out_mat) <- rownames(snp_mat)
+	colnames(out_mat) <- rownames(snp_mat)
 	index <- 2
-	for (row in seq_len(nrow(align_df) - 1)) {
-		for (comp_row in seq(index, nrow(align_df))) {
-			not_miss <- align_df[row, ] != "?" & align_df[comp_row, ] != "?"
-			comps <- align_df[c(row, comp_row), not_miss]
-			dist <- sum(abs(as.numeric(comps[1, ]) - as.numeric(comps[2, ])))
-			out_mat[comp_row, row] <-  dist / ncol(comps)
+	for (row in seq_len(nrow(snp_mat) - 1)) {
+		for (comp_row in seq(index, nrow(snp_mat))) {
+			not_miss <- snp_mat[row, ] != "?" & snp_mat[comp_row, ] != "?"
+			missing <- append(missing, (ncol(snp_mat) - sum(not_miss)) / ncol(snp_mat))
+			comps <- snp_mat[c(row, comp_row), not_miss]
+			distance <- sum(abs(as.numeric(comps[1, ]) - as.numeric(comps[2, ])))
+			out_mat[comp_row, row] <-  distance / ncol(comps)
 		}
 		index <- index + 1
 	}
-	as.dist(out_mat)
+	cat(paste0("Average missing comparisons proportion: ", round(mean(missing, na.rm = TRUE), 2), "\n"))
+	out_mat
 }
 
 
-# a function to calculate lambda
-# this is from "A Rough Guide to SNAPP"
+# a function to calculate lambda (used for SNAPP)
+# Lambda is a parameter for the Yule Prior for the species tree and branch lengths
+# This equation is from "A Rough Guide to SNAPP"
 # lambda = 1/h * (sum(k=1 to n-1) k/(n*(n - k)))
-# h = tree height, n = number of species
+# h = expected(prior) tree height, n = number of species
 get_lambda <- function(height, num) {
-	mysum <- 0
+	values <- vector("numeric")
 	for (kval in seq_len(num - 1)) {
-		val <- kval / (num * (num - kval))
-		mysum <- mysum + val
+		values <- append(values, kval / (num * (num - kval)))
 	}
-	(1 / height) * mysum
+	sum(values, na.rm = TRUE) / height
 }
 
 
@@ -97,27 +101,28 @@ if (! snapp_present || ! pops_present) {
 }
 
 
-# read in the alignment as a list, and convert to a dataframe (samples as rows)
+# read in the NEXUS SNP matrix (automatically converted to a list indexed by sample)
 mynex <- read.nexus.data(snapp_file)
-mydf <- t(as.data.frame(mynex))
-rownames(mydf) <- names(mynex)		# for some reason it replaces "-" with "." otherwise
+mymat <- matrix(unlist(mynex), nrow = length(mynex), ncol = length(mynex[[1]]), byrow = TRUE)
+rownames(mymat) <- names(mynex)
 
 
 # read in the populations file as a table
-pops_table <- read.table(pops_file, header = FALSE)
+pops_table <- read.table(pops_file, header = FALSE, sep = "\t")
 colnames(pops_table) <- c("sample", "pop")
 
 
 # calculate pairwise sequence divergence as substitutions per site
 # this calculation takes the longest (but not too bad)
-subs_per_site <- seq_div(mydf)
+subs_mat <- sequence_diversity(mymat)
 
 
-# report possible lambda values for different numbers of species
+# report possible lambda values for different numbers of species (2–15)
 # need maximum divergence divided by two (height of the tree)
-height <- round(max(subs_per_site) / 2, 2)
-cat(paste0("Tree height: ", height, "\n"))
-cat("Lambda values for numbers of species:\n")
+height <- round(max(subs_mat, na.rm = TRUE) / 2, 2)
+cat(paste0("Tree height: ", height, " substitutions per site\n"))
+cat("Lambda (parameter for Yule Prior for species tree) for numbers of species:\n")
+cat("Species\tLambda\n")
 for (num in seq(2, 15)) {
 	lambda <- round(get_lambda(height, num), 1)
 	cat(paste0(num, "\t", lambda, "\n"))
@@ -126,15 +131,16 @@ for (num in seq(2, 15)) {
 
 # report average divergence within each population
 cat("\nAverage substitutions per site between members of a population:\n")
-pops_to_subset <- unique(pops_table$pop[pops_table$sample %in% rownames(mydf)])
-subs_df <- as.data.frame(as.matrix(subs_per_site))
+pops_to_subset <- unique(pops_table$pop[pops_table$sample %in% rownames(mymat)])
+
 result_df <- as.data.frame(matrix(nrow = length(pops_to_subset), ncol = 1))
 rownames(result_df) <- pops_to_subset
-colnames(result_df) <- c("avg")
+colnames(result_df) <- c("Average_subs")
+
 for (pop in pops_to_subset) {
 	samples <- pops_table$sample[pops_table$pop == pop]
-	sub_mat <- as.matrix(subs_df[rownames(subs_df) %in% samples, colnames(subs_df) %in% samples])
-	result_df[pop, ] <- round(mean(as.dist(sub_mat)), 3)
+	comp_mat <- subs_mat[samples, samples]
+	result_df[pop, ] <- round(mean(comp_mat, na.rm = TRUE), 3)
 }
 result_df
 summary(result_df)
