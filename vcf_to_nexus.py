@@ -1,10 +1,10 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 ##########################
-# Author: B. Anderson
+# Author: B.M. Anderson
 # Date: Oct 2021
-# Modified: April 2022
-# Description: convert a VCF file (VCF 4.0) to a Nexus file, for SplitsTree or SNAPP/ER
+# Modified: April 2022; May 2025 (cleaned up; added optional samples file input for converting tip labels)
+# Description: convert a VCF file (VCF 4.0) to a Nexus file for SplitsTree or SNAPP/ER
 ##########################
 
 
@@ -16,13 +16,14 @@ import random
 
 # instantiate the parser
 parser = argparse.ArgumentParser(description = 'A script to convert a VCF file to a Nexus input format required by SplitsTree or SNAPP/ER;' +
-						' it is up to the user to ensure the VCF has the SNPs of interest (e.g. biallelic, one per locus)')
+	' it is up to the user to ensure the VCF has already been filtered to the SNPs of interest (e.g. biallelic, one per locus)')
 
 
 # add arguments to parse
 parser.add_argument('vcf_file', type = str, help = 'The VCF file to convert')
 parser.add_argument('-o', type = str, dest = 'out_format', help = 'The type of output desired: \"snapp\" or \"splits\" [default]')
 parser.add_argument('-r', type = int, dest = 'random_down', help = 'Randomly downsample to this number of SNP loci')
+parser.add_argument('-s', type = str, dest = 'sample_table', help = 'File with sample labels and desired display labels, tab separated and one per line')
 
 
 # parse the command line
@@ -35,6 +36,7 @@ args = parser.parse_args()
 vcf_file = args.vcf_file
 out_format = args.out_format
 random_down = args.random_down
+sample_table = args.sample_table
 
 if not vcf_file:
 	parser.print_help(sys.stderr)
@@ -48,12 +50,21 @@ else:
 	out_format = 'splits'
 
 
+# process the samples table if present
+if sample_table:
+	sample_dict = {}
+	with open(sample_table, 'r') as sample_file:
+		for line in sample_file:
+			pieces = line.strip().split('\t')
+			sample_dict[pieces[0]] = pieces[1]
+
+
 # process the VCF to grab sample labels and genotypes for each SNP locus
 with open(vcf_file, 'r') as vcf:
 	snps = []
 	count_snps = 0
 	for line in vcf:
-		if line.startswith('#'):        # a header INFO line
+		if line.startswith('#'):		# a header INFO line
 			if line.startswith('#CHROM'):		# the line with sample names
 				sample_labels = line.rstrip().split()[9:]
 		else:
@@ -62,11 +73,18 @@ with open(vcf_file, 'r') as vcf:
 			for call in calls:
 				'''	The format is GT:DP:CATG, so 0/0:85:0,85,0,0 for a homozygous AA with 85 depth
 					We want to grab the genotype (GT) 0/0 then split that into the two alleles 0 and 0 as a list
+					Note: some genotypes may be phased ('|'), so account for that
 				'''
-				genotypes.append(call.split(':')[0].split('/'))
+				genotypes.append(call.split(':')[0].replace('|', '/').split('/'))
 			snps.append(genotypes)
 			count_snps = count_snps + 1
 	print('Read in a VCF file with ' + str(len(sample_labels)) + ' samples and ' + str(count_snps) + ' SNP loci')
+
+
+# if there was a samples table, translate the labels
+if sample_table:
+	for index, sample in enumerate(sample_labels):
+		sample_labels[index] = sample_dict.get(sample, sample)		# don't replace if the sample isn't in the dictionary
 
 
 # only retain non-monomorphic SNP loci
@@ -91,16 +109,14 @@ for genotypes in snps:
 		count_mono = count_mono + 1
 	index = index + 1
 if count_mono > 0:
-	new_snps = [snps[i] for i in keep_indices]
-	snps = new_snps
+	snps = [snps[i] for i in keep_indices]
 	print('Dropped ' + str(count_mono) + ' monomorphic SNPs and retained ' + str(len(snps)))
 
 
 # randomly downsample the SNP loci to the desired number
 if random_down:
 	if len(snps) > random_down:
-		new_snps = random.sample(snps, random_down)
-		snps = new_snps
+		snps = random.sample(snps, random_down)
 		print('Randomly downsampled to ' + str(random_down) + ' SNPs')
 
 
@@ -132,19 +148,19 @@ if out_format == 'snapp':
 	symbols = '012'
 	num_chars = len(snps)
 	data_block = ('BEGIN DATA;\n\tDIMENSIONS NTAX=' + str(len(sample_labels)) +
-				' NCHAR=' + str(num_chars) + ';\n\t' +
-				'FORMAT\n\t\tDATATYPE=' + datatype + '\n\t\tMISSING=' + missing + '\n\t\t' +
-				'SYMBOLS=\"' + symbols + '\";\n\tMATRIX\n')
+		' NCHAR=' + str(num_chars) + ';\n\t' +
+		'FORMAT\n\t\tDATATYPE=' + datatype + '\n\t\tMISSING=' + missing + '\n\t\t' +
+		'SYMBOLS=\"' + symbols + '\";\n\tMATRIX\n')
 elif out_format == 'splits':
 	datatype = 'STANDARD'
 	missing = '?'
 	symbols = '01'
 	num_chars = len(snps) * 2
 	data_block = ('BEGIN TAXA;\n\tDIMENSIONS NTAX=' + str(len(sample_labels)) + ';\n\t' +
-				'TAXLABELS ' + ' '.join(sample_labels) + ';\nEND;\n' +
-				'BEGIN CHARACTERS;\n\tDIMENSIONS NCHAR=' + str(num_chars) + ';\n\t' +
-				'FORMAT\n\t\tDATATYPE=' + datatype + '\n\t\tMISSING=' + missing + '\n\t\t' +
-				'LABELS=NO\n\t\tSYMBOLS=\"' + symbols + '\";\n\tMATRIX\n')
+		'TAXLABELS ' + ' '.join(sample_labels) + ';\nEND;\n' +
+		'BEGIN CHARACTERS;\n\tDIMENSIONS NCHAR=' + str(num_chars) + ';\n\t' +
+		'FORMAT\n\t\tDATATYPE=' + datatype + '\n\t\tMISSING=' + missing + '\n\t\t' +
+		'LABELS=NO\n\t\tSYMBOLS=\"' + symbols + '\";\n\tMATRIX\n')
 
 # create the Nexus file
 with open(os.path.basename(vcf_file) + '.nex', 'w') as outfile:
@@ -152,10 +168,10 @@ with open(os.path.basename(vcf_file) + '.nex', 'w') as outfile:
 	outfile.write(data_block)
 	if out_format == 'snapp':
 		for index, line_out in enumerate(lines_out):
-			outfile.write('\t\t\t' + sample_labels[index] + '\t' + line_out + '\n')	
+			outfile.write('\t\t' + sample_labels[index] + '\t' + line_out + '\n')
 	elif out_format == 'splits':
 		for line_out in lines_out:
-			outfile.write('\t\t\t' + line_out + '\n')
+			outfile.write('\t\t' + line_out + '\n')
 	outfile.write('\t;\nEND;\n')
 
 
