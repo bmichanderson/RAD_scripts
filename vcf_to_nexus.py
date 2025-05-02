@@ -143,7 +143,7 @@ for index, sample_label in enumerate(sample_labels):
 
 # set output parameters
 if out_format == 'snapp':
-	datatype = 'INTEGERDATA'
+	datatype = 'SNP'
 	missing = '?'
 	symbols = '012'
 	num_chars = len(snps)
@@ -163,7 +163,7 @@ elif out_format == 'splits':
 		'LABELS=NO\n\t\tSYMBOLS=\"' + symbols + '\";\n\tMATRIX\n')
 
 # create the Nexus file
-with open(os.path.basename(vcf_file) + '.nex', 'w') as outfile:
+with open(os.path.splitext(vcf_file)[0] + '_' + out_format + '.nex', 'w') as outfile:
 	outfile.write('#NEXUS\n')
 	outfile.write(data_block)
 	if out_format == 'snapp':
