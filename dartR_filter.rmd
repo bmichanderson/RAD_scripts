@@ -386,6 +386,54 @@ write.table(coding[order(as.numeric(coding[, 2])), ], file = "filtered_str_pops.
 	row.names = FALSE, col.names = FALSE, quote = FALSE)
 ```
 
+SNAPPER  
+Load the filtered dataset (secondaries already removed), then downsample and remove monomorphic  
+Filter for high coverage, then generate the output removing SNPs only variable in a single population
+```{r}
+snapper_genl <- gl.load("filtered_genl.rdata")
+keep <- read.table("snapper_samples.txt", header = FALSE)[, 1]
+snapper_genl <- gl.keep.ind(snapper_genl, as.character(keep), mono.rm = TRUE, recalc = TRUE)
+snapper_genl <- gl.filter.callrate(snapper_genl, method = "loc", threshold = 1)
+gl2snapper(snapper_genl, outfile = "snapper.nex", outpath = ".", rm.autapomorphies = TRUE)
+```
+Note: BEUAti may have issues reading this in, so you may have to change `integerdata` to `snp` in the output file  
+
+NEXUS of binary characters  
+This could be useful for SplitsTree and uncorrected P-distances  
+As an example, use the `snapper_genl` just filtered above (or modify for `filtered_genl`)  
+If interested in changing display labels, read in a text file with two columns (original and new), no header  
+```{r}
+mygenl <- snapper_genl
+mymat <- as.matrix(mygenl)
+
+# rename if desired (comment out if not)
+names <- read.table("snapper/rename.txt", header = FALSE, sep = "\t")
+names$V1 <- as.character(names$V1)
+for (index in seq_len(nrow(mymat))) {
+	rownames(mymat)[index] <- names$V2[match(rownames(mymat)[index], names$V1)]
+}
+
+# generate output
+mymat[is.na(mymat)] <- "?"
+mymat[mymat == "0"] <- "00"
+mymat[mymat == "1"] <- "01"
+mymat[mymat == "2"] <- "11"
+matrix_block <- apply(mymat, 1, function(x) paste0(x, collapse = ""))
+data_block <- paste0("BEGIN TAXA;\n\tDIMENSIONS NTAX=", nrow(mymat), ";\n\t",
+	"TAXLABELS ", paste0(rownames(mymat), collapse = " "), ";\nEND;\n",
+	"BEGIN CHARACTERS;\n\tDIMENSIONS NCHAR=", 2 * ncol(mymat), ";\n\t",
+	"FORMAT\n\t\tDATATYPE=STANDARD\n\t\tMISSING=?\n\t\t",
+	"LABELS=NO\n\t\tSYMBOLS=\"01\";\n\tMATRIX")
+outfile <- file("splits.nex", open = "w")
+writeLines("#NEXUS", con = outfile)
+writeLines(data_block, con = outfile)
+for (entry in matrix_block) {
+	writeLines(paste0(c("\t\t", entry), collapse = ""), con = outfile)
+}
+writeLines("\t;\nEND;", con = outfile)
+close(outfile)
+```
+
 # Popgen
 Load the dataset (if not loaded yet and starting here)
 ```{r}
