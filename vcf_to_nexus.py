@@ -3,7 +3,8 @@
 ##########################
 # Author: B.M. Anderson
 # Date: Oct 2021
-# Modified: April 2022; May 2025 (cleaned up; added optional samples file input for converting tip labels)
+# Modified: April 2022; May 2025 (cleaned up; added optional samples file input for converting
+# 	tip labels and population table for removing autapomorphic SNPs for SNAPP/ER)
 # Description: convert a VCF file (VCF 4.0) to a Nexus file for SplitsTree or SNAPP/ER
 ##########################
 
@@ -24,6 +25,8 @@ parser.add_argument('vcf_file', type = str, help = 'The VCF file to convert')
 parser.add_argument('-o', type = str, dest = 'out_format', help = 'The type of output desired: \"snapp\" or \"splits\" [default]')
 parser.add_argument('-r', type = int, dest = 'random_down', help = 'Randomly downsample to this number of SNP loci')
 parser.add_argument('-s', type = str, dest = 'sample_table', help = 'File with sample labels and desired display labels, tab separated and one per line')
+parser.add_argument('-a', type = str, dest = 'autapo', help = 'File with sample labels and population labels, tab separated and one per line;' +
+	' if provided, this will turn on filtering of autapomorphic SNPs (only variable in single populations)')
 
 
 # parse the command line
@@ -37,6 +40,7 @@ vcf_file = args.vcf_file
 out_format = args.out_format
 random_down = args.random_down
 sample_table = args.sample_table
+autapo = args.autapo
 
 if not vcf_file:
 	parser.print_help(sys.stderr)
@@ -59,6 +63,22 @@ if sample_table:
 			sample_dict[pieces[0]] = pieces[1]
 
 
+# process the pops table if present
+if autapo:
+	pops = []
+	pop_dict = {}
+	with open(autapo, 'r') as pop_file:
+		for line in pop_file:
+			pieces = line.strip().split('\t')
+			sample = pieces[0]
+			pop = pieces[1]
+			if pop not in pops:
+				pops.append(pop)
+				pop_dict[pop] = [sample]
+			else:
+				pop_dict[pop].append(sample)
+
+
 # process the VCF to grab sample labels and genotypes for each SNP locus
 with open(vcf_file, 'r') as vcf:
 	snps = []
@@ -67,6 +87,12 @@ with open(vcf_file, 'r') as vcf:
 		if line.startswith('#'):		# a header INFO line
 			if line.startswith('#CHROM'):		# the line with sample names
 				sample_labels = line.rstrip().split()[9:]
+				if autapo:
+					pop_labels = []
+					for sample_label in sample_labels:
+						for pop in pops:
+							if sample_label in pop_dict[pop]:
+								pop_labels.append(pop)
 		else:
 			calls = line.rstrip().split()[9:]
 			genotypes = []
@@ -87,7 +113,7 @@ if sample_table:
 		sample_labels[index] = sample_dict.get(sample, sample)		# don't replace if the sample isn't in the dictionary
 
 
-# only retain non-monomorphic SNP loci
+# remove monomorphic SNP loci
 keep_indices = []
 count_mono = 0
 index = 0
@@ -111,6 +137,42 @@ for genotypes in snps:
 if count_mono > 0:
 	snps = [snps[i] for i in keep_indices]
 	print('Dropped ' + str(count_mono) + ' monomorphic SNPs and retained ' + str(len(snps)))
+
+
+# if there was a populations table provided, drop autapomorphic SNPs
+if autapo:
+	count_autapo = 0
+	keep_indices = []
+	index = 0
+	for genotypes in snps:
+		comparisons = []
+		autapomorphic = True
+		for pop in set(pop_labels):
+			pop_genos = [''.join(sorted(genotypes[ind])) for ind, item in enumerate(pop_labels) if item == pop]
+			pop_genos = [item for item in pop_genos if item != '..']
+			for item in set(pop_genos):
+				comparisons.append(item)
+			genos = [item for item in set(comparisons)]
+			if len(set(comparisons)) > 2:
+				autapomorphic = False
+				break
+			elif len(set(comparisons)) == 2:
+				if all([len([item for item in comparisons if item == genos[0]]) > 1,
+					len([item for item in comparisons if item == genos[1]]) > 1]):
+					autapomorphic = False
+					break
+				else:
+					continue
+			else:
+				continue
+		if not autapomorphic:
+			keep_indices.append(index)
+		else:
+			count_autapo = count_autapo + 1
+		index = index + 1
+	if count_autapo > 0:
+		snps = [snps[i] for i in keep_indices]
+		print('Dropped ' + str(count_autapo) + ' autapomorphic SNPs and retained ' + str(len(snps)))
 
 
 # randomly downsample the SNP loci to the desired number
