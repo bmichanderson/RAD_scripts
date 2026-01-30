@@ -32,7 +32,7 @@ help <- function(help_message) {
 		cat("\t...\tPaths to VCF files in the order for plotting/comparing (e.g. sequentially increasing)\n")
 		cat("\t-f\tA file with names of fasta files corresponding to the VCF files, one per line\n")
 		cat("\t-i\tA custom-formatted ipyrad stats file with a header and columns containing specific values:\n")
-		cat("\t\tcolumn1 = sample ID; column2 = clustering threshold; column3 = autosomal heterozygosity\n")
+		cat("\t\t\"clust\" = clustering threshold; \"sample\" = sample ID; \"heterozygosity\" = autosomal heterozygosity\n")
 		cat("\t-o\tOutput prefix [default: \"out\"]\n")
 		cat("\t-p\tA text file with parameter values for each input VCF in the order provided,",
 			"one per line (e.g. \"85\" or \"M2\")\n")
@@ -281,9 +281,9 @@ colnames(error_mat) <- c("param", "locus_err", "allele_err", "snp_err")
 dists_pop <- matrix(ncol = 2)
 colnames(dists_pop) <- c("param", "dist")
 het_obs <- matrix(ncol = 3)
-colnames(het_obs) <- c("sample", "param", "het")
+colnames(het_obs) <- c("param", "sample", "het")
 het_fas <- matrix(ncol = 3)
-colnames(het_fas) <- c("sample", "param", "het")
+colnames(het_fas) <- c("param", "sample", "het")
 
 ## cycle through the VCF files
 index <- 1
@@ -391,8 +391,8 @@ for (vcf_file in catch_args) {
 	## calculate heterozygosity
 	cat("Calculating SNP heterozygosity\n")
 	het_df <- het_est(genl)
-	out_mat <- as.matrix(cbind(rownames(het_df),
-		rep(params[index], nrow(het_df)),
+	out_mat <- as.matrix(cbind(rep(params[index], nrow(het_df)),
+		rownames(het_df),
 		het_df[, 1]))
 	if (index == 1) {
 		het_obs <- out_mat
@@ -434,8 +434,8 @@ if (fasta_present) {
 		## calculate observed autosomal heterozygosity
 		hets <- apply(mymat, 1, het_measure)
 		het_df <- as.data.frame(hets)
-		out_mat <- as.matrix(cbind(rownames(het_df),
-			rep(params[index], nrow(het_df)),
+		out_mat <- as.matrix(cbind(rep(params[index], nrow(het_df)),
+			rownames(het_df),
 			het_df[, 1]))
 		if (index == 1) {
 			het_fas <- out_mat
@@ -518,49 +518,49 @@ if (samples_present) {
 
 ## heterozygosity
 if (ipyrad_present) {
-	het_stats[, 2] <- factor(het_stats[, 2], levels = unique(het_stats[, 2]))
-	boxplot(as.numeric(het_stats[, 3]) * 100 ~ het_stats[, 2],
-		ylim = c(0, max(as.numeric(het_stats[, 3]) * 100) * 1.05),
+	het_stats[, "clust"] <- factor(het_stats[, "clust"], levels = unique(het_stats[, "clust"]))
+	boxplot(as.numeric(het_stats[, "heterozygosity"]) * 100 ~ het_stats[, "clust"],
+		ylim = c(0, max(as.numeric(het_stats[, "heterozygosity"]) * 100) * 1.05),
 		main = "Autosomal heterozygosity (ipyrad stats)\n(ambiguous bases in consensus sequences within samples)",
 		ylab = "Heterozygous sites (%)", xlab = "", xaxt = "n")
-	labels <- unique(het_stat[, 2])
-	yrange <- max(as.numeric(het_stats[, 3]) * 100) * 1.05
-	axis(1, at = seq_len(length(unique(het_stat[, 2]))), labels = FALSE)
-	text(seq_len(length(unique((het_stat[, 2])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
+	labels <- unique(het_stat[, "clust"])
+	yrange <- max(as.numeric(het_stats[, "heterozygosity"]) * 100) * 1.05
+	axis(1, at = seq_len(length(unique(het_stat[, "clust"]))), labels = FALSE)
+	text(seq_len(length(unique((het_stat[, "clust"])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
 		labels = labels, xpd = TRUE)
 
-	het_obs[, 2] <- factor(het_obs[, 2], levels = unique(het_obs[, 2]))
-	boxplot(as.numeric(het_obs[, 3]) * 100 ~ het_obs[, 2],
+	het_obs[, 1] <- factor(het_obs[, 1], levels = unique(het_obs[, 1]))
+	boxplot(as.numeric(het_obs[, 3]) * 100 ~ het_obs[, 1],
 		ylim = c(0, max(as.numeric(het_obs[, 3]) * 100) * 1.05),
 		main = "Observed SNP heterozygosity",
 		ylab = "Heterozygosity (%)", xlab = "", xaxt = "n")
-	labels <- unique(het_obs[, 2])
+	labels <- unique(het_obs[, 1])
 	yrange <- max(as.numeric(het_obs[, 3]) * 100) * 1.05
-	axis(1, at = seq_len(length(unique(het_obs[, 2]))), labels = FALSE)
-	text(seq_len(length(unique((het_obs[, 2])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
+	axis(1, at = seq_len(length(unique(het_obs[, 1]))), labels = FALSE)
+	text(seq_len(length(unique((het_obs[, 1])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
 		labels = labels, xpd = TRUE)
 } else {
-	het_obs[, 2] <- factor(het_obs[, 2], levels = unique(het_obs[, 2]))
-	boxplot(as.numeric(het_obs[, 3]) * 100 ~ het_obs[, 2],
+	het_obs[, 1] <- factor(het_obs[, 1], levels = unique(het_obs[, 1]))
+	boxplot(as.numeric(het_obs[, 3]) * 100 ~ het_obs[, 1],
 		ylim = c(0, max(as.numeric(het_obs[, 3]) * 100) * 1.05),
 		main = "Observed SNP heterozygosity",
 		ylab = "Heterozygosity (%)", xlab = "", xaxt = "n")
-	labels <- unique(het_obs[, 2])
+	labels <- unique(het_obs[, 1])
 	yrange <- max(as.numeric(het_obs[, 3]) * 100) * 1.05
-	axis(1, at = seq_len(length(unique(het_obs[, 2]))), labels = FALSE)
-	text(seq_len(length(unique((het_obs[, 2])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
+	axis(1, at = seq_len(length(unique(het_obs[, 1]))), labels = FALSE)
+	text(seq_len(length(unique((het_obs[, 1])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
 		labels = labels, xpd = TRUE)
 }
 if (fasta_present) {
-	het_fas[, 2] <- factor(het_fas[, 2], levels = unique(het_fas[, 2]))
-	boxplot(as.numeric(het_fas[, 3]) * 100 ~ het_fas[, 2],
+	het_fas[, 1] <- factor(het_fas[, 1], levels = unique(het_fas[, 1]))
+	boxplot(as.numeric(het_fas[, 3]) * 100 ~ het_fas[, 1],
 		ylim = c(0, max(as.numeric(het_fas[, 3]) * 100) * 1.05),
 		main = "Observed autosomal heterozygosity (fasta file)",
 		ylab = "Heterozygosity (%)", xlab = "", xaxt = "n")
-	labels <- unique(het_fas[, 2])
+	labels <- unique(het_fas[, 1])
 	yrange <- max(as.numeric(het_fas[, 3]) * 100) * 1.05
-	axis(1, at = seq_len(length(unique(het_fas[, 2]))), labels = FALSE)
-	text(seq_len(length(unique((het_fas[, 2])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
+	axis(1, at = seq_len(length(unique(het_fas[, 1]))), labels = FALSE)
+	text(seq_len(length(unique((het_fas[, 1])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
 		labels = labels, xpd = TRUE)
 }
 
