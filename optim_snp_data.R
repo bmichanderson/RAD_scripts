@@ -3,6 +3,7 @@
 # Date: Nov–Dec 2023
 # Modified: Mar 2025 (added fasta input; updated Paris for polymorphic loci and per population; adjusted plotting)
 #	Apr 2025 (adjusted population distance calculations and reporting, and Paris reporting; adjusted het site calc)
+#	Feb 2026 (added saving intermediate results and memory cleanup to try to avoid/mitigate crashes)
 # Description: evaluate multiple SNP datasets to optimise assembly parameters
 # Note: the minimum arguments are multiple VCF files (one per parameter combination)
 #	Optionally, provide text files to:
@@ -269,21 +270,60 @@ if (fasta_present) {
 ##########
 # execute the analyses
 
-## initiate the matrices for holding the results
+## initiate the matrices for holding the results and set file names
 size_mat <- matrix(ncol = 3)
 colnames(size_mat) <- c("param", "num_loci", "num_snps")
+size_file <- paste0(out_pref, "_size.rda")
+
 paris_mat <- matrix(ncol = 2)
 colnames(paris_mat) <- c("param", "num_loci")
+paris_file <- paste0(out_pref, "_paris.rda")
+
 paris_pop_mat <- matrix(ncol = 2)
 colnames(paris_pop_mat) <- c("param", "num_loci")
+paris_pop_file <- paste0(out_pref, "_paris_pops.rda")
+
 error_mat <- matrix(ncol = 4)
 colnames(error_mat) <- c("param", "locus_err", "allele_err", "snp_err")
+error_file <- paste0(out_pref, "_error.rda")
+
 dists_pop <- matrix(ncol = 2)
 colnames(dists_pop) <- c("param", "dist")
+dists_file <- paste0(out_pref, "_distspop.rda")
+
 het_obs <- matrix(ncol = 3)
 colnames(het_obs) <- c("param", "sample", "het")
+het_file <- paste0(out_pref, "_snphet.rda")
+
 het_fas <- matrix(ncol = 3)
 colnames(het_fas) <- c("param", "sample", "het")
+fastahet_file <- paste0(out_pref, "_fastahet.rda")
+
+## check if previous run results files exist (e.g. after crash), and if so, load them
+loaded <- FALSE
+
+if (file.exists(size_file)) {
+	load(size_file)
+	loaded <- TRUE
+}
+if (file.exists(paris_file)) {
+	load(paris_file)
+}
+if (file.exists(error_file)) {
+	load(error_file)
+}
+if (file.exists(het_file)) {
+	load(het_file)
+}
+
+if (samples_present) {
+	if (file.exists(dists_file)) {
+		load(dists_file)
+	}
+	if (file.exists(paris_pop_file)) {
+		load(paris_pop_file)
+	}
+}
 
 ## cycle through the VCF files
 index <- 1
@@ -325,7 +365,9 @@ for (vcf_file in catch_args) {
 		merror <- mastretta_error(genl, rep_mat)
 		out_mat <- as.matrix(cbind(rep(params[index], nrow(merror)),
 			merror))
-		if (index == 1) {
+		if (loaded) {
+			error_mat <- rbind(error_mat, out_mat)
+		} else if (index == 1) {
 			error_mat <- out_mat
 		} else {
 			error_mat <- rbind(error_mat, out_mat)
@@ -334,16 +376,19 @@ for (vcf_file in catch_args) {
 		## remove one of the reps from the genlight
 		genl <- genl[-match(rep_mat[, 2], genl@ind.names)]
 		cat(paste0("Subsetted the genlight to ", nInd(genl), " samples\n"))
-		## if there is a samples file, remove the reps (and corresponding pops) from those
+		## if there is a samples file, remove the reps (and corresponding pops) from those and from the vcfr
 		if (samples_present) {
 			drop_indices <- keep_samples %in% rep_mat[, 2]
 			keep_samples <- keep_samples[!drop_indices]
 			keep_pops <- keep_pops[!drop_indices]
+			vcfr <- vcfr[sample = keep_samples]
 		}
 	}
 
 	## summarise number of loci and SNPs
-	if (index == 1) {
+	if (loaded) {
+		size_mat <- rbind(size_mat, c(params[index], length(unique(genl@chromosome)), nLoc(genl)))
+	} else if (index == 1) {
 		size_mat[1, ] <- c(params[index], length(unique(genl@chromosome)), nLoc(genl))
 	} else {
 		size_mat <- rbind(size_mat, c(params[index], length(unique(genl@chromosome)), nLoc(genl)))
@@ -352,7 +397,9 @@ for (vcf_file in catch_args) {
 	## calculate Paris
 	cat("Assessing how many polymorphic loci are shared by at least 80% of samples\n")
 	paris_num <- paris(genl)
-	if (index == 1) {
+	if (loaded) {
+		paris_mat <- rbind(paris_mat, c(params[index], paris_num))
+	} else if (index == 1) {
 		paris_mat[1, ] <- c(params[index], paris_num)
 	} else {
 		paris_mat <- rbind(paris_mat, c(params[index], paris_num))
@@ -363,8 +410,10 @@ for (vcf_file in catch_args) {
 		pop_names <- unique(keep_pops)
 		unused <- vector()
 		pop_index <- 1
+		cat(paste0("Population (of ", length(pop_names), "): "))
 		for (pop in pop_names) {
 			samples <- keep_samples[keep_pops == pop]
+			cat(paste0(pop_index, " "))
 			if (length(samples) > 4) {
 				subgenl <- genl[match(samples, genl@ind.names)]
 				paris_num_pop <- paris(subgenl)
@@ -375,13 +424,16 @@ for (vcf_file in catch_args) {
 				pop_index <- pop_index + 1
 			}
 		}
+		cat("\n")
 		if (length(unused) > 0) {
 			cat(paste0("The following populations had fewer than 5 individuals and were not used: ",
 				paste0(unused, collapse = " "), "\n"))
 		}
 		out_mat <- as.matrix(cbind(rep(params[index], length(paris_pop_counts)),
 			paris_pop_counts))
-		if (index == 1) {
+		if (loaded) {
+			paris_pop_mat <- rbind(paris_pop_mat, out_mat)
+		} else if (index == 1) {
 			paris_pop_mat <- out_mat
 		} else {
 			paris_pop_mat <- rbind(paris_pop_mat, out_mat)
@@ -394,7 +446,9 @@ for (vcf_file in catch_args) {
 	out_mat <- as.matrix(cbind(rep(params[index], nrow(het_df)),
 		rownames(het_df),
 		het_df[, 1]))
-	if (index == 1) {
+	if (loaded) {
+		het_obs <- rbind(het_obs, out_mat)
+	} else if (index == 1) {
 		het_obs <- out_mat
 	} else {
 		het_obs <- rbind(het_obs, out_mat)
@@ -406,12 +460,28 @@ for (vcf_file in catch_args) {
 		dists <- pop_dist(vcfr, keep_samples, keep_pops)
 		out_mat <- as.matrix(cbind(rep(params[index], length(dists)),
 			dists))
-		if (index == 1) {
+		if (loaded) {
+			dists_pop <- rbind(dists_pop, out_mat)
+		} else if (index == 1) {
 			dists_pop <- out_mat
 		} else {
 			dists_pop <- rbind(dists_pop, out_mat)
 		}
 	}
+
+	## save the results matrices in case of a crash
+	save(size_mat, file = size_file)
+	save(paris_mat, file = paris_file)
+	save(error_mat, file = error_file)
+	save(het_obs, file = het_file)
+	if (samples_present) {
+		save(dists_pop, file = dists_file)
+		save(paris_pop_mat, file = paris_pop_file)
+	}
+
+	## remove large variables and cleanup memory
+	rm(vcfr, genl)
+	gc()
 
 	## increment
 	index <- index + 1
@@ -420,6 +490,14 @@ for (vcf_file in catch_args) {
 ## if fasta files are present, cycle through them
 if (fasta_present) {
 	suppressMessages(library(ape))
+	loaded <- FALSE
+
+	## load existing results if present
+	if (file.exists(fastahet_file)) {
+		load(fastahet_file)
+		loaded <- TRUE
+	}
+
 	index <- 1
 	for (fasta_file in fastas) {
 		cat(paste0("\nProcessing fasta file ", as.character(index), " of ", as.character(length(fastas)), "...\n"))
@@ -437,30 +515,20 @@ if (fasta_present) {
 		out_mat <- as.matrix(cbind(rep(params[index], nrow(het_df)),
 			rownames(het_df),
 			het_df[, 1]))
-		if (index == 1) {
+		if (loaded) {
+			het_fas <- rbind(het_fas, out_mat)
+		} else if (index == 1) {
 			het_fas <- out_mat
 		} else {
 			het_fas <- rbind(het_fas, out_mat)
 		}
 
+		## save the results matrix
+		save(het_fas, file = fastahet_file)
+
 		## increment
 		index <- index + 1
 	}
-}
-
-
-##########
-# save the results to text files
-write.table(size_mat, file = paste0(out_pref, "_size.tab"), quote = FALSE, row.names = FALSE, sep = "\t")
-write.table(paris_mat, file = paste0(out_pref, "_paris.tab"), quote = FALSE, row.names = FALSE, sep = "\t")
-write.table(error_mat, file = paste0(out_pref, "_error.tab"), quote = FALSE, row.names = FALSE, sep = "\t")
-write.table(het_obs, file = paste0(out_pref, "_snphet.tab"), quote = FALSE, row.names = FALSE, sep = "\t")
-if (samples_present) {
-	write.table(dists_pop, file = paste0(out_pref, "_distspop.tab"), quote = FALSE, row.names = FALSE, sep = "\t")
-	write.table(paris_pop_mat, file = paste0(out_pref, "_paris_pops.tab"), quote = FALSE, row.names = FALSE, sep = "\t")
-}
-if (fasta_present) {
-	write.table(het_fas, file = paste0(out_pref, "_fastahet.tab"), quote = FALSE, row.names = FALSE, sep = "\t")
 }
 
 
