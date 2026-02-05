@@ -572,6 +572,7 @@ axis(1, at = seq_len(nrow(paris_mat)), labels = FALSE)
 text(seq_len(nrow(paris_mat)), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
 	labels = labels, xpd = TRUE)
 if (samples_present) {
+	paris_pop_mat <- as.data.frame(paris_pop_mat)
 	paris_pop_mat[, 1] <- factor(paris_pop_mat[, 1], levels = unique(paris_pop_mat[, 1]))
 	boxplot(as.numeric(paris_pop_mat[, 2]) ~ paris_pop_mat[, 1],
 		main = "Number of polymorphic loci recovered in >= 80% of samples within each population",
@@ -585,16 +586,17 @@ if (samples_present) {
 }
 
 ## heterozygosity
+het_obs <- as.data.frame(het_obs)
 if (ipyrad_present) {
 	het_stats[, "clust"] <- factor(het_stats[, "clust"], levels = unique(het_stats[, "clust"]))
 	boxplot(as.numeric(het_stats[, "heterozygosity"]) * 100 ~ het_stats[, "clust"],
 		ylim = c(0, max(as.numeric(het_stats[, "heterozygosity"]) * 100) * 1.05),
 		main = "Autosomal heterozygosity (ipyrad stats)\n(ambiguous bases in consensus sequences within samples)",
 		ylab = "Heterozygous sites (%)", xlab = "", xaxt = "n")
-	labels <- unique(het_stat[, "clust"])
+	labels <- unique(het_stats[, "clust"])
 	yrange <- max(as.numeric(het_stats[, "heterozygosity"]) * 100) * 1.05
-	axis(1, at = seq_len(length(unique(het_stat[, "clust"]))), labels = FALSE)
-	text(seq_len(length(unique((het_stat[, "clust"])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
+	axis(1, at = seq_len(length(unique(het_stats[, "clust"]))), labels = FALSE)
+	text(seq_len(length(unique((het_stats[, "clust"])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
 		labels = labels, xpd = TRUE)
 
 	het_obs[, 1] <- factor(het_obs[, 1], levels = unique(het_obs[, 1]))
@@ -620,6 +622,7 @@ if (ipyrad_present) {
 		labels = labels, xpd = TRUE)
 }
 if (fasta_present) {
+	het_fas <- as.data.frame(het_fas)
 	het_fas[, 1] <- factor(het_fas[, 1], levels = unique(het_fas[, 1]))
 	boxplot(as.numeric(het_fas[, 3]) * 100 ~ het_fas[, 1],
 		ylim = c(0, max(as.numeric(het_fas[, 3]) * 100) * 1.05),
@@ -634,6 +637,7 @@ if (fasta_present) {
 
 ## error
 if (reps_present) {
+	error_mat <- as.data.frame(error_mat)
 	error_mat[, 1] <- factor(error_mat[, 1], levels = unique(error_mat[, 1]))
 	boxplot(as.numeric(error_mat[, 2]) ~ error_mat[, 1],
 		main = paste0("Locus error rates\n",
@@ -665,6 +669,7 @@ if (reps_present) {
 
 ## within population distances
 if (samples_present) {
+	dists_pop <- as.data.frame(dists_pop)
 	dists_pop[, 1] <- factor(dists_pop[, 1], levels = unique(dists_pop[, 1]))
 	boxplot(as.numeric(dists_pop[, 2]) ~ dists_pop[, 1],
 		main = "Within Population Genetic Distances",
@@ -678,4 +683,4 @@ if (samples_present) {
 }
 
 # stop the pdf
-invisible(dev.off)
+invisible(dev.off())
