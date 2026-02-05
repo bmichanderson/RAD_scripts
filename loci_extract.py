@@ -5,7 +5,8 @@
 # Date: Sep 2021
 # Modified: Nov 2021 (added a sample exclude option); Dec 2023 (increased summary and added consensus);
 #	Dec 2023 (extended to Stacks allelic output); Mar 2025 (decreased counter reporting; adjusted consensus calculations; improved Stacks efficiency)
-# Description: extract loci from an ipyrad .loci file (or Stacks populations.samples.fa) based on an input list
+#	Feb 2026 (added min_samples per locus)
+# Description: extract loci from an ipyrad .loci file (or Stacks populations.samples.fa) based on an input list and/or minimum number of samples
 # Note: this script will convert the allelic data from Stacks (if run that way) to a single consensus per sample
 ##########################
 
@@ -14,13 +15,12 @@ import sys
 import argparse
 import statistics
 from Bio import SeqIO
-from Bio import motifs
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 
 
 # create a function for computing the consensus sequence of a list of aligned sequences
-# because the degenerate_consensus is behaving oddly, go back to the old approach
+# because the degenerate_consensus from motifs is behaving oddly, go back to the old approach
 # note: it was inserting a 'V' whenever the input position had only 'N' or non-ACGT
 # the current approach (below) will at least avoid this, though any lone non-ambiguity will be consensus
 # create an ambiguity dictionary
@@ -39,8 +39,6 @@ amb_dict = {
 }
 
 def make_consensus(seq_list, locus_num):
-#	mymotif = motifs.create(seq_list)
-#	consensus = mymotif.degenerate_consensus
 	con_list = []
 	for position in range(len(seq_list[0])):
 		align_slice = [entry[position] for entry in seq_list]
@@ -73,7 +71,8 @@ def make_consensus(seq_list, locus_num):
 
 
 # instantiate the parser
-parser = argparse.ArgumentParser(description = 'A script to extract loci from an ipyrad .loci file using an input list of locus numbers. ' +
+parser = argparse.ArgumentParser(description = 'A script to extract loci from an ipyrad .loci file using an input list of locus numbers ' +
+	'and/or minimum number of samples.' +
 	'The loci will be saved as individual fasta files in the current directory with prefix "locus_". ' +
 	'Now also works for Stacks input (use arg --stacks)')
 
@@ -82,7 +81,8 @@ parser = argparse.ArgumentParser(description = 'A script to extract loci from an
 parser.add_argument('loci_file', type = str, help = 'The .loci file to extract loci from')
 parser.add_argument('-c', action = 'store_true', help = 'Flag for whether to output a file with consensus sequences of the loci (optional)')
 parser.add_argument('-l', type = str, dest = 'loci_list', help = 'A text file with a list of desired loci numbers, one per line (optional). ' +
-	'If not provided, will extract all loci')
+	'If not provided, will potentially extract all loci, unless -m is set')
+parser.add_argument('-m', type = int, dest = 'min_samples', help = 'The minimum number of samples a locus needs to extract it (optional) [default: 1]')
 parser.add_argument('-s', type = str, dest = 'samp_list', help = 'A text file with a list of sample names to exclude, one per line (optional). ' +
 	'If not provided, will include all samples')
 parser.add_argument('--stacks', action = 'store_true', help = 'Flag for whether the input file is from Stacks (optional) [default: ipyrad]')
@@ -96,6 +96,7 @@ args = parser.parse_args()
 consens = args.c
 loci_file = args.loci_file
 loci_list = args.loci_list
+min_samples = args.min_samples
 samp_list = args.samp_list
 stacks = args.stacks
 
@@ -107,6 +108,13 @@ if loci_list:
 		for locus in loci:
 			locus_nums.append(locus.rstrip())
 	print('Will attempt to extract ' + str(len(locus_nums)) + ' loci')
+
+
+# check if a value was provided for min_samples
+if min_samples:
+	print('Will limit to loci with at least ' + str(min_samples) + ' desired samples')
+else:
+	min_samples = 1
 
 
 # read in the list of samples (if present) and assign to a list
@@ -145,7 +153,7 @@ with open(loci_file, 'r') as locfile:
 				if loci_list:
 					if locus_num in locus_nums:
 						found_loci = found_loci + 1
-						if len(this_locus) > 0:
+						if len(this_locus) >= min_samples:
 							with open('locus_' + str(locus_num) + '.fasta', 'w') as outfile:
 								for entry in this_locus:
 									SeqIO.write(entry, outfile, 'fasta')
@@ -157,8 +165,8 @@ with open(loci_file, 'r') as locfile:
 						else:
 							empty_loci = empty_loci + 1
 				else:
-					found_loci = found_loci + 1
-					if len(this_locus) > 0:
+					if len(this_locus) >= min_samples:
+						found_loci = found_loci + 1
 						with open('locus_' + str(locus_num) + '.fasta', 'w') as outfile:
 							for entry in this_locus:
 								SeqIO.write(entry, outfile, 'fasta')
@@ -206,7 +214,7 @@ with open(loci_file, 'r') as locfile:
 
 					# process the stored seq_list to ensure each sample is represented by only one sequence
 					# generate loci output and store consensus if requested
-					if len(seq_list) > 0:
+					if len(seq_list) >= (min_samples * 2):
 						found_loci = found_loci + 1
 						seq_out_list = []
 						sample_list = sorted(list(set([item[0] for item in seq_list])))
@@ -227,6 +235,8 @@ with open(loci_file, 'r') as locfile:
 						if consens:
 							conseq = make_consensus([entry.seq for entry in seq_out_list], this_locus_num)
 							consensus_list.append(conseq)
+					else:
+						empty_loci = empty_loci + 1
 
 					# reset the locus_num and seq_list
 					this_locus_num = locus_num
@@ -243,7 +253,7 @@ with open(loci_file, 'r') as locfile:
 							SeqRecord(Seq(line.strip()), id = str(sample), name = str(sample), description = str(sample))])
 
 		# run once more for last locus
-		if len(seq_list) > 0:
+		if len(seq_list) >= (min_samples * 2):
 			found_loci = found_loci + 1
 			seq_out_list = []
 			sample_list = sorted(list(set([item[0] for item in seq_list])))
@@ -264,6 +274,11 @@ with open(loci_file, 'r') as locfile:
 			if consens:
 				conseq = make_consensus([entry.seq for entry in seq_out_list], this_locus_num)
 				consensus_list.append(conseq)
+		else:
+			empty_loci = empty_loci + 1
+
+		# since there was an extra increment to empty_loci for the first locus, decrement
+		empty_loci = empty_loci - 1
 
 
 # output the consensus if requested
@@ -279,7 +294,7 @@ if loci_list:
 else:
 	print('Processed ' + str(processed_loci) + ' loci and extracted ' + str(found_loci) + ' loci')
 if empty_loci > 0:
-	print('Did not export ' + str(empty_loci) + ' loci that only included excluded samples')
+	print('Did not export ' + str(empty_loci) + ' loci that had fewer than ' + str(min_samples) + ' desired sample(s)')
 
 mean = sum(locus_lengths)/len(locus_lengths)
 stdev = statistics.pstdev(locus_lengths)
