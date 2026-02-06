@@ -493,15 +493,13 @@ for (vcf_file in catch_args) {
 
 ## if fasta files are present, cycle through them
 if (fasta_present) {
-	suppressMessages(library(ape))
-	loaded <- FALSE
-
-	## load existing results if present
-	if (file.exists(fastahet_file)) {
-		load(fastahet_file)
-		loaded <- TRUE
+	# check if this is run with the previous or after restart
+	# (ensure that a smaller param file for a restart doesn't influence the fasta row names)
+	if (length(fastas) > length(params)) {
+		params <- unlist(lapply(seq_len(length(fastas)), function(x) paste0("P", x)))
 	}
 
+	suppressMessages(library(ape))
 	index <- 1
 	for (fasta_file in fastas) {
 		cat(paste0("\nProcessing fasta file ", as.character(index), " of ", as.character(length(fastas)), "...\n"))
@@ -519,16 +517,11 @@ if (fasta_present) {
 		out_mat <- as.matrix(cbind(rep(params[index], nrow(het_df)),
 			rownames(het_df),
 			het_df[, 1]))
-		if (loaded) {
-			het_fas <- rbind(het_fas, out_mat)
-		} else if (index == 1) {
+		if (index == 1) {
 			het_fas <- out_mat
 		} else {
 			het_fas <- rbind(het_fas, out_mat)
 		}
-
-		## save the results matrix
-		save(het_fas, file = fastahet_file)
 
 		## increment
 		index <- index + 1
