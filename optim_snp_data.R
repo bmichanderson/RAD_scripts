@@ -56,9 +56,13 @@ paris <- function(genl) {
 	mat <- as.matrix(genl)
 	keep_cols <- apply(mat, 2, len_unique) > 1
 	mat <- mat[, keep_cols]
-	keep_snps <- colSums(! is.na(mat)) / nrow(mat) >= 0.80
-	sub_genl <- genl[, keep_snps]
-	length(unique(sub_genl@chromosome))
+	if (!is.null(dim(mat))) {
+		keep_snps <- colSums(! is.na(mat)) / nrow(mat) >= 0.80
+		sub_genl <- genl[, keep_snps]
+		length(unique(sub_genl@chromosome))
+	} else {
+		0
+	}
 }
 
 
@@ -227,8 +231,8 @@ for (index in seq_len(length(args))) {
 	}
 }
 
-if (length(catch_args) < 2) {
-	stop(help("Missing VCF files!\n"), call. = FALSE)
+if (length(catch_args) < 1) {
+	stop(help("Missing VCF file(s)!\n"), call. = FALSE)
 }
 
 
