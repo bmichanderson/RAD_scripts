@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 
 ##########################
-# Author: B. Anderson
+# Author: B.M. Anderson
 # Date: May 2022
+# Modified: Feb 2026 (adjusted genotype reading, figure size and distance table output)
 # Description: assess the similarity between samples in a VCF file
 ##########################
 
 
 import sys
 import argparse
-import copy
 import numpy
 import pandas
 import matplotlib
@@ -59,7 +59,7 @@ with open(vcf_file, 'r') as infile:
 				if genotype == ['.', '.']:
 					geno_list[index].append('NA')
 				else:
-					geno_list[index].append(''.join(genotype))
+					geno_list[index].append(''.join(sorted(genotype)))
 				index = index + 1
 
 
@@ -74,7 +74,7 @@ sets = []
 for element in myarray:
 	sets.append(set(element))
 
-print('Genotypes: ' + str(sets[0].union(*sets[1:])) + '\n')
+print('Genotypes: ' + str(sorted(sets[0].union(*sets[1:]))) + '\n')
 
 
 # initialise a list to store the distances
@@ -120,23 +120,11 @@ for index in range(len(myarray)):
 	mydists[index].append(numpy.nan)
 
 
-# create a dataframe
-mydf = pandas.DataFrame(mydists)
-mydf.columns = samples
-mydf.index = samples
-
-
-# write an output friendly copy of the distances to a file
-printdf = copy.deepcopy(mydf)
-printdf[numpy.isnan(printdf)] = 'NA'
-printdf.to_csv(out_pre + '_dists.tab', sep = '\t')
-
-
 # write the comparisons, sorted from largest to smallest
 mycomps.sort(key = lambda x: x[2], reverse = True)
 with open(out_pre + '_comps.txt', 'w') as outfile:
 	for comp in mycomps:
-		outfile.write('\t'.join(str(i) for i in comp) + '\n')
+		outfile.write('\t'.join([str(comp[0]), str(comp[1]), '{:.8f}'.format(comp[2])]) + '\n')
 
 
 # plot a boxplot of a square dataframe and save to file
@@ -149,7 +137,9 @@ numpy.fill_diagonal(squarearray, numpy.nan)
 plotdf = pandas.DataFrame(squarearray)
 plotdf.columns = samples
 plotdf.index = samples
-myfig = plotdf.boxplot(rot = 90, figsize = (18, 12)).get_figure()
+# set output size based on how many samples
+figwidth = max(18, round(len(samples) / 10))
+myfig = plotdf.boxplot(rot = 90, figsize = (figwidth, 12)).get_figure()
 myfig.tight_layout()
 myfig.savefig(out_pre + '_boxplot.png', dpi = 300)
 
@@ -166,3 +156,10 @@ plt.xlabel('Proportion different sites', fontsize = 14)
 ax.xaxis.set_tick_params(labelsize = 12)
 ax.yaxis.set_tick_params(labelsize = 12)
 myfig2.savefig(out_pre + '_hist.png', dpi = 300)
+
+
+# create a dataframe and write an output-friendly copy of distances to a file
+mydf = pandas.DataFrame(mydists)
+mydf.columns = samples
+mydf.index = samples
+mydf.to_csv(out_pre + '_dists.tab', sep = '\t', na_rep = 'NA')
