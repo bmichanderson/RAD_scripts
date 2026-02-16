@@ -3,7 +3,8 @@
 ##########################
 # Author: B.M. Anderson
 # Date: Nov 2021
-# Modified: Mar 2022 (report stats; corrected for ipyrad behaviour); Mar 2025 (added standard deviation and per sample)
+# Modified: Mar 2022 (report stats; corrected for ipyrad behaviour); Mar 2025 (added standard deviation and per sample);
+#	Feb 2026 (adjusted histogram plotting to avoid memory issues)
 # Description: capture and plot read depth information from a VCF file (VCF 4.0)
 ##########################
 
@@ -118,21 +119,32 @@ for sample_entry in sample_list:
 # plot histograms
 fig, (ax1, ax2, ax3) = plt.subplots(3, 1, sharex = True, figsize = (10, 10))
 plt.subplots_adjust(hspace = 0.2)
-ax1.hist(all_depths, density = False, range = [0, use_max(all_depths)],
+
+heights, edges = numpy.histogram(all_depths, density = False, range = [0, use_max(all_depths)],
 	bins = round(use_max(all_depths) / 5))
+widths = numpy.diff(edges)
+ax1.bar(edges[: -1], heights, width = widths, align = 'edge')
 ax1.set_title('Depth per individual SNP')
 ax1.set_ylabel('SNPs')
-ax2.hist(means, density = False, range = [0, use_max(means)],
+
+heights, edges = numpy.histogram(means, density = False, range = [0, use_max(means)],
 	bins = round(use_max(means) / 5))
+widths = numpy.diff(edges)
+ax2.bar(edges[: -1], heights, width = widths, align = 'edge')
 ax2.set_title('Mean depth per site')
 ax2.set_ylabel('Site')
-ax3.hist(maxs, density = False, range = [0, use_max(maxs)],
+
+heights, edges = numpy.histogram(maxs, density = False, range = [0, use_max(maxs)],
 	bins = round(use_max(maxs) / 5))
+widths = numpy.diff(edges)
+ax3.bar(edges[: -1], heights, width = widths, align = 'edge')
 ax3.set_title('Maximum depth per site')
 ax3.set_ylabel('Site')
 ax3.set_xlabel('Depth')
 ax3.set_xlim(0, use_max(maxs) + 0.01 * use_max(maxs))
+
 plt.savefig(out_pre + '_depth.pdf')
+plt.close()
 
 
 # plot depth per sample
@@ -145,6 +157,7 @@ plt.figure(2, figsize = (target_width, target_width / 2))
 plt.xticks(rotation = 90)
 plt.boxplot(array_list, labels = sample_labels, showfliers = False)
 plt.savefig(out_pre + '_depth_boxplot.png', dpi = 300)
+plt.close()
 
 
 # report mean depth per sample
