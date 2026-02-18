@@ -1,9 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 ##########################
-# Author: B. Anderson
+# Author: B.M. Anderson
 # Date: Dec 2021
-# Updated: May 2022, Oct 2023 (support for phased genotypes; support for deletions in GATK)
+# Updated: May 2022, Oct 2023 (support for phased genotypes; support for deletions in GATK), Feb 2026 (small clean up)
 # Description: convert a VCF file (VCF 4.0) to a Nexus file for SVDquartets
 ##########################
 
@@ -21,7 +21,7 @@ parser = argparse.ArgumentParser(description = 'A script to convert a VCF file t
 # add arguments to parse
 parser.add_argument('-v', type = str, dest = 'vcf_file', help = 'The VCF file to convert')
 parser.add_argument('-s', type = str, dest = 'sample_file',
-	help = 'A tab-delimited file of sample name and taxon, one per line [required if specifying higher groups]')
+	help = 'A tab-delimited file of sample ID and taxon, one per line [required if specifying higher groups]')
 parser.add_argument('-f', type = str, dest = 'out_format', help = 'Output format as two haplotypes ("hap"; default)' +
 	' or single sequence ("seq") with ambiguities')
 
