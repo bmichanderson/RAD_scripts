@@ -6,9 +6,11 @@ This markdown provides a series of commands that may be useful when exploring an
 It relies on the package `dartRverse` (using v. 1.0.6) including the packages  
 `dartR.base` (v. 1.0.8), `dartR.data` (v. 1.0.2), and `dartR.spatial` (v. 0.78)  
 
-Note: if you are using Ubuntu v. 24.04, you may need to separately install libraries:
+Note: if you are using Ubuntu v. 24.04, you may need to separately install  
+programs and libraries:
 ```bash
 sudo apt update && apt install -y \
+	cmake \
 	libcurl4-openssl-dev \
 	libfftw3-dev \
 	libfontconfig1-dev \
@@ -20,13 +22,14 @@ sudo apt update && apt install -y \
 	libpng-dev \
 	libssl-dev \
 	libtiff5-dev \
+	libudunits2-dev \
 	libwebp-dev \
 	libxml2-dev
 ```
 
 Install necessary packages (this is for R v. 4.3)
 ```{r}
-install.packages(c("ape", "devtools", "directlabels", "plotly", "remotes"))
+install.packages(c("ape", "devtools", "directlabels", "leaflet", "leaflet.minicharts", "plotly", "remotes"))
 remotes::install_version("rms", version = "6.7-1")
 remotes::install_version("haplo.stats", version = "1.9.7")
 install.packages("BiocManager")
@@ -40,8 +43,8 @@ Input files are:
 1) A CSV file from DArT containing SNPs scored as "1" or "0" on two lines (alleles): `..._SNP_1.csv`  
 2) A CSV file of individual metadata (header: `id,pop,lat,lon`)  
 ```{r}
-suppressMessages(library("dartRverse"))
-snps_file <- "*_SNP_1.csv"
+library("dartRverse")
+snps_file <- "{filename}_SNP_1.csv"
 meta_file <- "meta.csv"
 ```
 
@@ -51,7 +54,7 @@ Read in the DArT data (can take a bit for larger datasets)
 # recalc: recalculate stats in case individuals were not included in the meta_file (dropped)
 # probar: progress bar
 mygenl <- gl.read.dart(snps_file, ind.metafile = meta_file,
-	mono.rm = TRUE, recalc = TRUE, probar = TRUE)
+	mono.rm = FALSE, recalc = TRUE, probar = TRUE)
 ```
 
 Save a copy in case of shutdown/error or for convenience later
@@ -64,10 +67,12 @@ If wanting to start again from this point later, start here
 mygenl <- gl.load("input.rdata")
 ```
 
-Drop outgroups if desired (from a text file with sample IDs, one per line)
+Drop clones (from a text file with sample IDs, one per line)  
+This depends on previously detecting clones using DArT's distance matrix (provided with the dataset)  
+Given biological replicates, a threshold for detecting clones can be set (e.g. mean + 2 * stdev)
 ```{r}
-outgroups <- read.table("outgroup_samples.txt", header = FALSE)[, 1]
-mygenl <- gl.drop.ind(mygenl, outgroups, mono.rm = TRUE, recalc = TRUE)
+clones <- read.table("dart_clone_drops.txt", header = FALSE)[, 1]
+mygenl <- gl.drop.ind(mygenl, clones, mono.rm = FALSE, recalc = TRUE)
 cat(paste0("Filtered to a genlight of ", nInd(mygenl), " individuals and ",
 	nLoc(mygenl), " SNPs\n"))
 snps_remain <- nLoc(mygenl)
@@ -104,6 +109,7 @@ smearplotgl <- gl.smearplot(mygenl, ind.labels = FALSE)
 # minor allele frequency plot
 gl.report.maf(mygenl)
 invisible(dev.off())
+rm(smearplotgl)
 ```
 
 # Filter data to remove less reliable SNPs
@@ -123,7 +129,7 @@ gc()
 
 Filter based on tag length; remove short loci depending on distribution
 ```{r}
-filtered_genl <- gl.filter.taglength(filtered_genl, lower = 60, upper = 69)
+filtered_genl <- gl.filter.taglength(filtered_genl, lower = 65, upper = 69)
 diff <- snps_remain - nLoc(filtered_genl)
 cat(paste0("Removed ", diff, " SNPs\n"))
 cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and ",
@@ -133,7 +139,7 @@ snps_remain <- nLoc(filtered_genl)
 
 Filter based on reproducibility (a proxy for problems)
 ```{r}
-filtered_genl <- gl.filter.reproducibility(filtered_genl, threshold = 0.95)
+filtered_genl <- gl.filter.reproducibility(filtered_genl, threshold = 0.98)
 diff <- snps_remain - nLoc(filtered_genl)
 cat(paste0("Removed ", diff, " SNPs\n"))
 cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and ",
@@ -145,9 +151,54 @@ Make a copy of the object for population diversity analyses (save it for later i
 ```{r}
 pop_filt_genl <- filtered_genl
 gl.save(pop_filt_genl, file = "pop_filt_genl.rdata")
+
+# clean up memory
+rm(pop_filt_genl)
+gc()
+```
+
+# Remove monomorphic and secondary SNPs
+Remove monomorphic and fully NA loci
+```{r}
+filtered_genl <- gl.filter.monomorphs(filtered_genl)
+diff <- snps_remain - nLoc(filtered_genl)
+cat(paste0("Removed ", diff, " SNPs\n"))
+cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and ",
+	nLoc(filtered_genl), " SNPs\n"))
+snps_remain <- nLoc(filtered_genl)
+```
+
+Drop secondary SNPs
+```{r}
+# can also use method = "random"
+filtered_genl <- gl.filter.secondaries(filtered_genl, method = "best")
+diff <- snps_remain - nLoc(filtered_genl)
+cat(paste0("Removed ", diff, " SNPs\n"))
+cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and ",
+	nLoc(filtered_genl), " SNPs\n"))
+snps_remain <- nLoc(filtered_genl)
+```
+
+Make a copy of the object for genetic distances and evolutionary inference (save it for later if needed)
+```{r}
+dist_filt_genl <- filtered_genl
+gl.save(dist_filt_genl, file = "dist_filt_genl.rdata")
+
+# clean up memory
+rm(dist_filt_genl)
+gc()
 ```
 
 # Filter for genetic structure analyses (not population diversity)
+Drop outgroups if desired (from a text file with sample IDs, one per line)
+```{r}
+outgroups <- read.table("outgroup_samples.txt", header = FALSE)[, 1]
+filtered_genl <- gl.drop.ind(filtered_genl, outgroups, mono.rm = TRUE, recalc = TRUE)
+cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and ",
+	nLoc(filtered_genl), " SNPs\n"))
+snps_remain <- nLoc(filtered_genl)
+```
+
 Remove SNPs found in less than a proportion of samples
 ```{r}
 filtered_genl <- gl.filter.callrate(filtered_genl, method = "loc", threshold = 0.95)
@@ -190,17 +241,6 @@ cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and 
 snps_remain <- nLoc(filtered_genl)
 ```
 
-Drop secondary SNPs
-```{r}
-# can also use metho = "random"
-filtered_genl <- gl.filter.secondaries(filtered_genl, method = "best")
-diff <- snps_remain - nLoc(filtered_genl)
-cat(paste0("Removed ", diff, " SNPs\n"))
-cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and ",
-	nLoc(filtered_genl), " SNPs\n"))
-snps_remain <- nLoc(filtered_genl)
-```
-
 To avoid linkage, use a Hamming filter to remove tags that are too similar (the same locus)  
 The threshold (default 0.2) needs to consider the length of a tag (69 bp)  
 Assume that if there are fewer than c. 12% difference or c. 8 bp differences, it is the same locus  
@@ -218,13 +258,19 @@ snps_remain <- nLoc(filtered_genl)
 Save the object for import later with `gl.load`
 ```{r}
 gl.save(filtered_genl, file = "filtered_genl.rdata")
-# free up memory
+
+# clean up memory
+rm(filtered_genl)
 gc()
 ```
 
 # ANALYSES
 
 ## Genetic structure
+Load the dataset (if saved earlier and starting here)
+```{r}
+filtered_genl <- gl.load(file = "filtered_genl.rdata")
+```
 
 ### PCA
 Run a PCA of the genlight SNPs
@@ -252,36 +298,7 @@ gl.pcoa.plot(pca, filtered_genl, pop.labels = "pop", xaxis = 1, yaxis = 2,
 	zaxis = 3, interactive = TRUE)
 ```
 
-### Distance
-Output files for analysis and display with SplitsTree
-```{r}
-# method 3 = concatenate SNPs with ambiguities used for heterozygous sites
-gl2fasta(filtered_genl, outfile = "filtered_SNPs.fasta", method = 3, outpath = ".")
-```
-
-```{r}
-# install and load required libraries to generate distance matrices from DNA sequences
-library("devtools")
-install_github("simjoly/pofadinr")
-```
-
-```{r}
-library("ape")
-library("pofadinr")
-mydnabin <- fasta2DNAbin("filtered_SNPs.fasta")
-temp <- as.character(mydnabin)
-temp[temp == "n"] <- "?"
-mydnabin <- as.DNAbin(temp)
-distance <- dist.snp(mydnabin, model = "MATCHSTATES", as.matrix = TRUE)
-outfile <- file("distances_MATCHSTATES.txt", open = "w")
-writeLines(as.character(nInd(filtered_genl)), con = outfile)
-write.table(distance, file = outfile, sep = " ", append = TRUE,
-	col.names = FALSE, quote = FALSE)
-close(outfile)
-rm(temp)
-```
-
-### Structure  
+### Structure
 Output a file formatted for Structure, but first replace pop with a number in the genlight
 ```{r}
 strgenl <- filtered_genl
@@ -302,13 +319,68 @@ rm(strgenl)
 gc()
 ```
 
-### SNAPPER  
-Load the filtered dataset (secondaries already removed), then downsample and remove monomorphic  
-Filter for high coverage, then generate the output removing SNPs only variable in a single population
+## Distance
+Load the dataset (if saved earlier and starting here)
 ```{r}
-snapper_genl <- gl.load("filtered_genl.rdata")
+dist_filt_genl <- gl.load(file = "dist_filt_genl.rdata")
+```
+
+Drop outgroups if desired (from a text file with sample IDs, one per line)
+```{r}
+outgroups <- read.table("outgroup_samples.txt", header = FALSE)[, 1]
+dist_filt_genl <- gl.drop.ind(dist_filt_genl, outgroups, mono.rm = TRUE, recalc = TRUE)
+cat(paste0("Filtered to a genlight of ", nInd(dist_filt_genl), " individuals and ",
+	nLoc(dist_filt_genl), " SNPs\n"))
+```
+
+Output files for analysis and display with SplitsTree
+```{r}
+# method 3 = concatenate SNPs with ambiguities used for heterozygous sites
+gl2fasta(dist_filt_genl, outfile = "dist_filtered_SNPs.fasta", method = 3, outpath = ".")
+
+# clean up
+rm(dist_filt_genl)
+gc()
+```
+
+```{r}
+# install and load required libraries to generate distance matrices from DNA sequences
+library("devtools")
+install_github("simjoly/pofadinr")
+```
+
+```{r}
+library("ape")
+library("pofadinr")
+mydnabin <- fasta2DNAbin("dist_filtered_SNPs.fasta")
+temp <- as.character(mydnabin)
+temp[temp == "n"] <- "?"
+mydnabin <- as.DNAbin(temp)
+distance <- dist.snp(mydnabin, model = "MATCHSTATES", as.matrix = TRUE)
+outfile <- file("distances_MATCHSTATES.txt", open = "w")
+writeLines(as.character(ncol(distance)), con = outfile)
+write.table(distance, file = outfile, sep = " ", append = TRUE,
+	col.names = FALSE, quote = FALSE)
+close(outfile)
+rm(temp, mydnabin)
+```
+
+## Evolutionary inference
+### SNAPPER
+Load the distance dataset (with outgroups), filter based on MAF  
+Downsample as desired (use text file `snapper_samples.txt`) and remove monomorphic  
+Filter for high coverage (set threshold as appropriate here)  
+Generate output removing SNPs only variable in a single population
+```{r}
+snapper_genl <- gl.load("dist_filt_genl.rdata")
+snapper_genl <- gl.filter.maf(snapper_genl, threshold = 3)
+
 keep <- read.table("snapper_samples.txt", header = FALSE)[, 1]
 snapper_genl <- gl.keep.ind(snapper_genl, as.character(keep), mono.rm = TRUE, recalc = TRUE)
+
+cat(paste0("Filtered to a genlight of ", nInd(snapper_genl), " individuals and ",
+	nLoc(snapper_genl), " SNPs\n"))
+
 snapper_genl <- gl.filter.callrate(snapper_genl, method = "loc", threshold = 1)
 gl2snapper(snapper_genl, outfile = "snapper_snapp.nex", outpath = ".", rm.autapomorphies = TRUE, nloc = 1000)
 ```
@@ -354,12 +426,27 @@ rm(snapper_genl)
 gc()
 ```
 
+## Population genetics
+
 ### Pairwise Fst and IBD
 Load the dataset (if saved earlier and starting here)
 ```{r}
 filtered_genl <- gl.load(file = "filtered_genl.rdata")
 ```
 
+Check sample coverage
+```{r}
+summary(filtered_genl$pop)
+```
+
+Drop pops if needed using a text file `drop_pops.txt`
+```{r}
+drops <- read.table("drop_pops.txt", header = FALSE)[, 1]
+filtered_genl <- gl.drop.pop(filtered_genl, drops, mono.rm = TRUE, recalc = TRUE)
+cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and ",
+	nLoc(filtered_genl), " SNPs\n"))
+```
+OR  
 Drop individuals for even population sampling (e.g. six per pop)  
 Put the sample IDs of samples to drop to leave only six per pop in a text file `drop_samples_fst.txt`
 ```{r}
@@ -367,13 +454,16 @@ drops <- read.table("drop_samples_fst.txt", header = FALSE)[, 1]
 filtered_genl <- gl.drop.ind(filtered_genl, drops, mono.rm = TRUE, recalc = TRUE)
 cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and ",
 	nLoc(filtered_genl), " SNPs\n"))
-snps_remain <- nLoc(filtered_genl)
+```
+OR  
+Randomly subsample to the same number per population
+```{r}
+filtered_genl <- gl.subsample.ind(filtered_genl, 6, by.pop = TRUE)
 ```
 
 Calculate pairwise Fst with StAMPP and write to file
 ```{r}
 fsts <- gl.fst.pop(filtered_genl, nboots = 1)
-### export the pairwise Fst values to file
 write.table(fsts, file = "StAMPP_Fst.txt",
 	quote = FALSE, row.names = TRUE)
 ```
@@ -411,7 +501,7 @@ gl.ibd(filtered_genl_subset)
 invisible(dev.off())
 ```
 
-# Popgen diversity
+### Diversity
 Load the dataset (if saved earlier and starting here)
 ```{r}
 pop_filt_genl <- gl.load(file = "pop_filt_genl.rdata")
@@ -422,6 +512,14 @@ Check sample coverage
 summary(pop_filt_genl$pop)
 ```
 
+Drop pops if needed using a text file `drop_pops.txt`
+```{r}
+drops <- read.table("drop_pops.txt", header = FALSE)[, 1]
+pop_filt_genl <- gl.drop.pop(pop_filt_genl, drops, mono.rm = FALSE, recalc = TRUE)
+cat(paste0("Filtered to a genlight of ", nInd(pop_filt_genl), " individuals and ",
+	nLoc(pop_filt_genl), " SNPs\n"))
+```
+OR  
 Drop individuals so that populations have even coverage for comparison (e.g. five samples per pop)  
 Put the sample IDs of samples to drop to leave only five per pop in a text file `drop_samples_diversity.txt`
 ```{r}
@@ -429,15 +527,14 @@ drops <- read.table("drop_samples_diversity.txt", header = FALSE)[, 1]
 pop_filt_genl <- gl.drop.ind(pop_filt_genl, drops, mono.rm = FALSE, recalc = TRUE)
 cat(paste0("Filtered to a genlight of ", nInd(pop_filt_genl), " individuals and ",
 	nLoc(pop_filt_genl), " SNPs\n"))
-snps_remain <- nLoc(pop_filt_genl)
 ```
-
-Check sample coverage
+OR  
+Subsample to the same number per population
 ```{r}
-summary(pop_filt_genl$pop)
+pop_filt_genl <- gl.subsample.ind(pop_filt_genl, 4, by.pop = TRUE)
 ```
 
-## Autosomal/SNP heterozygosity  
+#### Autosomal/SNP heterozygosity
 To ensure no missing data, each population needs to be filtered separately  
 Only loci found in all samples in that population will be kept (zero missing data)  
 Note: currently, the function will not report Fis for autosomal(!)
