@@ -3,13 +3,13 @@ title: "Filter DArT data with dartR"
 ---
 
 This markdown provides a series of commands that may be useful when exploring and filtering DArT datasets  
-It relies on the package `dartRverse` (using v. 1.0.6) including the packages  
-`dartR.base` (v. 1.0.8), `dartR.data` (v. 1.0.2), and `dartR.spatial` (v. 0.78)  
+It relies on the main package `dartRverse` (currently v. 1.0.6) including the packages  
+`dartR.base`, `dartR.data`, and `dartR.spatial`  
 
 Note: if you are using Ubuntu v. 24.04, you may need to separately install  
 programs and libraries:
 ```bash
-sudo apt update && apt install -y \
+sudo apt update && sudo apt install -y \
 	cmake \
 	libcurl4-openssl-dev \
 	libfftw3-dev \
@@ -29,16 +29,17 @@ sudo apt update && apt install -y \
 
 Install necessary packages (this is for R v. 4.3)
 ```{r}
-install.packages(c("ape", "devtools", "directlabels", "leaflet", "leaflet.minicharts", "plotly", "remotes"))
-remotes::install_version("rms", version = "6.7-1")
-remotes::install_version("haplo.stats", version = "1.9.7")
+install.packages(c("ape", "cli", "devtools", "directlabels", "ggplot2", "leaflet",
+	"leaflet.minicharts", "plotly", "remotes"))
+remotes::install_version("rms", version = "6.7-1")		# or install.packages("rms") for R >= 4.4
+remotes::install_version("haplo.stats", version = "1.9.7")		# or install.packages("haplo.stats") for R >= 4.4
 install.packages("BiocManager")
 BiocManager::install(c("SNPRelate", "snpStats"))
 install.packages("dartRverse")
 install.packages(c("dartR.base", "dartR.data", "dartR.spatial"))
 ```
 
-Load the library and designate input files (assumed to be in the working directory, which can be set with `setwd(...)`  
+Load the library and designate input files (assumed to be in the working directory, which can be set with `setwd(...)`)  
 Input files are:  
 1) A CSV file from DArT containing SNPs scored as "1" or "0" on two lines (alleles): `..._SNP_1.csv`  
 2) A CSV file of individual metadata (header: `id,pop,lat,lon`)  
@@ -54,7 +55,7 @@ Read in the DArT data (can take a bit for larger datasets)
 # recalc: recalculate stats in case individuals were not included in the meta_file (dropped)
 # probar: progress bar
 mygenl <- gl.read.dart(snps_file, ind.metafile = meta_file,
-	mono.rm = FALSE, recalc = TRUE, probar = TRUE)
+	mono.rm = TRUE, recalc = TRUE, probar = TRUE)
 ```
 
 Save a copy in case of shutdown/error or for convenience later
@@ -72,7 +73,7 @@ This depends on previously detecting clones using DArT's distance matrix (provid
 Given biological replicates, a threshold for detecting clones can be set (e.g. mean + 2 * stdev)
 ```{r}
 clones <- read.table("dart_clone_drops.txt", header = FALSE)[, 1]
-mygenl <- gl.drop.ind(mygenl, clones, mono.rm = FALSE, recalc = TRUE)
+mygenl <- gl.drop.ind(mygenl, clones, mono.rm = TRUE, recalc = TRUE)
 cat(paste0("Filtered to a genlight of ", nInd(mygenl), " individuals and ",
 	nLoc(mygenl), " SNPs\n"))
 snps_remain <- nLoc(mygenl)
@@ -157,17 +158,6 @@ rm(pop_filt_genl)
 gc()
 ```
 
-# Remove monomorphic and secondary SNPs
-Remove monomorphic and fully NA loci
-```{r}
-filtered_genl <- gl.filter.monomorphs(filtered_genl)
-diff <- snps_remain - nLoc(filtered_genl)
-cat(paste0("Removed ", diff, " SNPs\n"))
-cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and ",
-	nLoc(filtered_genl), " SNPs\n"))
-snps_remain <- nLoc(filtered_genl)
-```
-
 Drop secondary SNPs
 ```{r}
 # can also use method = "random"
@@ -241,7 +231,7 @@ cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and 
 snps_remain <- nLoc(filtered_genl)
 ```
 
-To avoid linkage, use a Hamming filter to remove tags that are too similar (the same locus)  
+To further avoid linkage, use a Hamming filter to remove tags that are too similar (the same locus)  
 The threshold (default 0.2) needs to consider the length of a tag (69 bp)  
 Assume that if there are fewer than c. 12% difference or c. 8 bp differences, it is the same locus  
 This can take a long time (not recommended if > 20 k SNPs remain; may have to run overnight)
@@ -281,21 +271,25 @@ pca <- gl.pcoa(filtered_genl, nfactors = 5, parallel = TRUE, n.cores = 8)
 Plot with dartR
 ```{r}
 pdf("pca.pdf")
-gl.pcoa.plot(pca, filtered_genl, pop.labels = "pop",
-	xaxis = 1, yaxis = 2, zaxis = NULL, interactive = FALSE)
 cat(paste0("Plotting a PCA based on ", snps_remain, " SNPs\n"))
+plot1 <- gl.pcoa.plot(pca, filtered_genl, pop.labels = "pop", label.size = 0.8,
+	xaxis = 1, yaxis = 2, zaxis = NULL, interactive = FALSE)
+plot2 <- gl.pcoa.plot(pca, filtered_genl, pop.labels = "pop", label.size = 0.8,
+	xaxis = 1, yaxis = 3, zaxis = NULL, interactive = FALSE)
+plot3 <- gl.pcoa.plot(pca, filtered_genl, pop.labels = "pop", label.size = 0.8,
+	xaxis = 1, yaxis = 4, zaxis = NULL, interactive = FALSE)
 invisible(dev.off())
 ```
 
 Or plot interactively
 ```{r}
-gl.pcoa.plot(pca, filtered_genl, pop.labels = "pop", xaxis = 1, yaxis = 2,
-	zaxis = NULL, interactive = TRUE)
+gl.pcoa.plot(pca, filtered_genl, pop.labels = "pop",
+	xaxis = 1, yaxis = 2, zaxis = NULL, interactive = TRUE)
 ```
 Or plot interactively in 3D
 ```{r}
-gl.pcoa.plot(pca, filtered_genl, pop.labels = "pop", xaxis = 1, yaxis = 2,
-	zaxis = 3, interactive = TRUE)
+gl.pcoa.plot(pca, filtered_genl, pop.labels = "pop",
+	xaxis = 1, yaxis = 2, zaxis = 3, interactive = TRUE)
 ```
 
 ### Structure
@@ -315,7 +309,7 @@ write.table(coding[order(as.numeric(coding[, 2])), ], file = "structure_pops.txt
 	row.names = FALSE, col.names = FALSE, quote = FALSE)
 
 # clean up
-rm(strgenl)
+rm(coding, strgenl, filtered_genl)
 gc()
 ```
 
@@ -357,10 +351,18 @@ temp <- as.character(mydnabin)
 temp[temp == "n"] <- "?"
 mydnabin <- as.DNAbin(temp)
 distance <- dist.snp(mydnabin, model = "MATCHSTATES", as.matrix = TRUE)
-outfile <- file("distances_MATCHSTATES.txt", open = "w")
-writeLines(as.character(ncol(distance)), con = outfile)
-write.table(distance, file = outfile, sep = " ", append = TRUE,
-	col.names = FALSE, quote = FALSE)
+taxa <- rownames(distance)
+taxa_block <- paste0("BEGIN TAXA;\n\tDIMENSIONS NTAX=", length(taxa), ";\n\t",
+	"TAXLABELS ", paste(taxa, collapse = " "), ";\nEND;\n")
+dist_block <- paste0("BEGIN DISTANCES;\n\tFORMAT\n\t\tTRIANGLE=BOTH\n\t\tDIAGONAL\n\t\t",
+	"LABELS=LEFT\n\t;\n\tMATRIX\n")
+outfile <- file("distances_MATCHSTATES.nex", open = "w")
+writeLines("#NEXUS", con = outfile)
+writeLines(taxa_block, con = outfile)
+writeLines(dist_block, con = outfile)
+write.table(as.matrix(distance), file = outfile, col.names = FALSE,
+	append = TRUE, quote = FALSE)
+writeLines("\t;\nEND;\n", con = outfile)
 close(outfile)
 rm(temp, mydnabin)
 ```
@@ -501,6 +503,12 @@ gl.ibd(filtered_genl_subset)
 invisible(dev.off())
 ```
 
+Clean up memory
+```{r}
+rm(filtered_genl, filtered_genl_subset)
+gc()
+```
+
 ### Diversity
 Load the dataset (if saved earlier and starting here)
 ```{r}
@@ -512,10 +520,10 @@ Check sample coverage
 summary(pop_filt_genl$pop)
 ```
 
-Drop pops if needed using a text file `drop_pops.txt`
+Drop pops if needed (e.g. too small sample size) using a text file `drop_pops.txt`
 ```{r}
 drops <- read.table("drop_pops.txt", header = FALSE)[, 1]
-pop_filt_genl <- gl.drop.pop(pop_filt_genl, drops, mono.rm = FALSE, recalc = TRUE)
+pop_filt_genl <- gl.drop.pop(pop_filt_genl, drops, mono.rm = TRUE, recalc = TRUE)
 cat(paste0("Filtered to a genlight of ", nInd(pop_filt_genl), " individuals and ",
 	nLoc(pop_filt_genl), " SNPs\n"))
 ```
@@ -528,10 +536,10 @@ pop_filt_genl <- gl.drop.ind(pop_filt_genl, drops, mono.rm = FALSE, recalc = TRU
 cat(paste0("Filtered to a genlight of ", nInd(pop_filt_genl), " individuals and ",
 	nLoc(pop_filt_genl), " SNPs\n"))
 ```
-OR  
-Subsample to the same number per population
+
+Subsample to the same number per population if needed
 ```{r}
-pop_filt_genl <- gl.subsample.ind(pop_filt_genl, 4, by.pop = TRUE)
+pop_filt_genl <- gl.subsample.ind(pop_filt_genl, 5, by.pop = TRUE)
 ```
 
 #### Autosomal/SNP heterozygosity
@@ -551,6 +559,7 @@ rownames(summary) <- pops
 for (pop in pops) {
 	# subset and calculate autosomal stats
 	sub_genl <- gl.keep.pop(pop_filt_genl, pop, mono.rm = FALSE, recalc = TRUE)
+	sub_genl <- gl.filter.allna(sub_genl)		# remove completely missing loci
 	sub_genl <- gl.filter.callrate(sub_genl, method = "loc", threshold = 1)
 	get_invariant <- gl.report.secondaries(sub_genl)
 	stats <- gl.report.heterozygosity(sub_genl, n.invariant = get_invariant[7, 2])
@@ -608,6 +617,6 @@ mybarplot(summary$He_auto, summary$He_auto_se, names = rownames(summary),
 mybarplot(summary$He_SNP, summary$He_SNP_se, names = rownames(summary),
 	main = "SNP unbiased expected heterozygosity (uHe)")
 mybarplot(summary$Fis, summary$Fis_se, names = rownames(summary),
-		main = "Inbreeding coefficient Fis\n(1 - Ho / uHe)")
+	main = "Inbreeding coefficient Fis\n(1 - Ho / uHe)")
 invisible(dev.off())
 ```
