@@ -89,18 +89,25 @@ het_measure <- function(x) {
 }
 
 
-## a function to calculate gene/nucleotide diversity (pi) for a population
+## functions to calculate gene/nucleotide diversity (pi) for a population
 ### this represents the average number of differences between sequences
 ### or the probability of choosing an allele that is different
 ### or the expected heterozygosity
-### Two formulas for calculating this use counts of alleles at a locus in a population
+### Two formulas for estimating this use counts of alleles at a locus in a population
 ### where ni = count of allele i, and n = sum of all allele counts
 ### (assuming HWE)
 ### 1) Nei & Roychoudhury 1974:	pi = n * (1 - sum[(ni / n)^2]) / (n - 1)
 ### and
 ### 2) Hohenlohe et al. 2010: pi = 1 - sum[(ni choose 2) / (n choose 2)]
 ### The metric can be averaged across sites/loci, but separate estimates should be unlinked!
-### If there is complete inbreeding, the sample number should be individuals rather than loci
+### Note: in the presence of substantial inbreeding, this estimate is biased downward
+### The sample number might be better interpreted as individuals rather than loci
+### Other ways to estimate this require knowing relatedness and F values
+### In the absence of that information, another estimator per locus might be used,
+### but it depends on knowing how many homozygotes are present for each allele (Ni)
+### 3) Shete 2003: Dl = (n / (n - 1/2)) * (1 - X - Y)
+### where X = sum[(ni / n)^2]
+### and Y = (1 / n) * (1 - sum[2Ni / n])
 
 ### Create an ambiguity code dataframe
 amb_df <- data.frame(matrix(nrow = 14, ncol = 3))
@@ -137,6 +144,51 @@ gd_measure <- function(x) {
 		}
 		# return pi
 		1 - sum(nchoose2(counts)) / nchoose2(sum(counts))
+	}
+}
+
+### Use (3) Shete 2003 for the function with inbreeding:
+gd_inbreed <- function(x) {
+	y <- x[!is.na(x)]		# remove missing
+	mylen <- length(y)
+	if (mylen == 0) {
+		NA
+	} else {
+		# count alleles and homozygotes
+		alleles <- vector("character")
+		homos <- vector("character")
+		index <- 1
+		hindex <- 1
+		for (genotype in y) {
+			if (genotype %in% c("a", "c", "g", "t")) {
+				homos[hindex] <- genotype
+				hindex <- hindex + 1
+			}
+			alleles[index] <- amb_df[genotype, 1]
+			alleles[index + 1] <- amb_df[genotype, 2]
+			if (genotype %in% c("b", "d", "h", "v")) {
+				alleles[index + 2] <- amb_df[genotype, 3]
+				index <- index + 3
+			} else {
+				index <- index + 2
+			}
+		}
+		counts <- vector("numeric", length(unique(alleles)))
+		index <- 1
+		for (allele in unique(alleles)) {
+			counts[index] <- sum(alleles == allele)
+			index <- index + 1
+		}
+		hcounts <- vector("numeric", length(unique(homos)))
+		index <- 1
+		for (homo in unique(homos)) {
+			hcounts[index] <- sum(homos == homo)
+			index <- index + 1
+		}
+
+		n <- sum(counts)
+		# return unbiased pi
+		(n / (n - 0.5)) * (1 - sum((counts / n)^2) - (1 / n) * (1 - sum(2 * hcounts / n)))
 	}
 }
 
@@ -409,7 +461,7 @@ if (fasta_present) {
 	## 5: average observed heterozygosity for genotypes in that locus
 	## 6: average nucleotide diversity for sites in that locus
 	## 7: average inbreeding coefficient for sites in the locus
-	results <- matrix(0, ncol = 7, nrow = length(fasta_list))
+	results <- matrix(0, ncol = 8, nrow = length(fasta_list))
 	colnames(results) <- c("Samples", "Sites", "Polymorphic", "Missing", "Ho", "pi", "Fis")
 	index <- 1		# track each locus
 
@@ -500,13 +552,19 @@ if (fasta_present) {
 		results[index, "Polymorphic"] <- sum(count_gen > 1) + polymorphic
 		miss <- apply(mymat, 2, function(x) sum(is.na(x)))
 		results[index, "Missing"] <- 100 * sum(miss) / length(mymat)
+		present <- nrow(mymat) - miss		# present data by position
 		hets <- apply(mymat, 2, het_measure)		# observed heterozygosity across sites
-		weight <- nrow(mymat) - miss - 1		# weight by n - 1, where n = observed genotypes
+		weight <- present - 1		# weight by n - 1, where n = observed genotypes
 		weighted <- weight * hets
 		results[index, "Ho"] <- sum(weighted, na.rm = TRUE) / sum(weight)
+
+		# set an if statement for the function to use? or earlier?
 		gened <- apply(mymat, 2, gd_measure)		# expected heterozygosity across sites
-		weight <- (nrow(mymat) - miss) * 2 - 1		# weight by n - 1, where n = counted alleles
-		weighted <- weight * gened
+
+
+		unbiased_gd <- gened * 2 * present / (2 * present - 1)	# for few individuals, adjust the estimated pi
+		weight <- 2 * present - 1		# weight by n - 1, where n = counted alleles
+		weighted <- weight * unbiased_gd
 		results[index, "pi"] <-  sum(weighted, na.rm = TRUE) / sum(weight)
 
 		### calculate the fixation index inbreeding coefficient Fis
