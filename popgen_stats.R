@@ -7,6 +7,8 @@
 #	Apr 2025 (changed fasta behaviour to take a list of multiple files and average across; assume one population)
 #	Apr 2025 (added individual sample measures; adjusted output and calcs for more potential hets; added weighting)
 #	Apr 2025 (added argument to make plotting optional)
+#	Mar 2026 (added another gene diversity estimate and option for inbreeding; updated/fixed weighting;
+#	added adjustment to gene diversity in fasta calcs to account for small sample sizes)
 # Description: calculate various popgen stats for a VCF file or a set of fasta alignments specified in a text file
 # Note:	either the VCF or fasta files must be present
 # Note: if specifying fasta input, it is assumed the alignments come from a single population
@@ -37,8 +39,10 @@ help <- function(help_message) {
 		cat("Options:\n")
 		cat("\t-o\tThe output file name prefix [default output]\n")
 		cat("\t-v\tThe VCF file to be analysed\n")
-		cat("\t-f\tThe text file list of fasta alignments to be analysed (from a single population)\n")
+		cat("\t-f\tThe text file list of fasta alignments to be analysed (loci from a single population)\n")
+		cat("\t-g\tThe type of gene diversity estimate to use: \"i\" for inbred, \"n\" for normal [default]\n")
 		cat("\t-s\tSamples and populations as a tab-delimited file of sample IDs and pops, one per line\n")
+		cat("\t\tNote: if running with fasta alignments, this file should only match the population being analysed\n")
 		cat("\t-t\tRun pairwise Fst calculations between populations (only for VCF) [default: do not]\n")
 		cat("\t-r\tType of Fst calculation: \"s\" for StAMPP Weir and Cockerham 1984 or",
 			"\"r\" for Reich et al. 2009 [default: both]\n")
@@ -105,7 +109,7 @@ het_measure <- function(x) {
 ### Other ways to estimate this require knowing relatedness and F values
 ### In the absence of that information, another estimator per locus might be used,
 ### but it depends on knowing how many homozygotes are present for each allele (Ni)
-### 3) Shete 2003: Dl = (n / (n - 1/2)) * (1 - X - Y)
+### 3) Shete 2003: Dl = (n / (n - 2)) * (1 - X - Y)
 ### where X = sum[(ni / n)^2]
 ### and Y = (1 / n) * (1 - sum[2Ni / n])
 
@@ -117,7 +121,7 @@ amb_df[, 2] <- 		c("a", "c", "g", "t", "t", "c", "g", "g", "t", "t", "g", "g", "
 amb_df[, 3] <- 		c("", "", "", "", "", "", "", "", "", "", "t", "t", "t", "g")
 
 ### Use (2) Hohenlohe et al. 2010 for the function:
-gd_measure <- function(x) {
+gd_normal <- function(x) {
 	y <- x[!is.na(x)]		# remove missing
 	mylen <- length(y)
 	if (mylen == 0) {
@@ -148,7 +152,7 @@ gd_measure <- function(x) {
 }
 
 ### Use (3) Shete 2003 for the function with inbreeding:
-gd_inbreed <- function(x) {
+gd_inbred <- function(x) {
 	y <- x[!is.na(x)]		# remove missing
 	mylen <- length(y)
 	if (mylen == 0) {
@@ -188,7 +192,7 @@ gd_inbreed <- function(x) {
 
 		n <- sum(counts)
 		# return unbiased pi
-		(n / (n - 0.5)) * (1 - sum((counts / n)^2) - (1 / n) * (1 - sum(2 * hcounts / n)))
+		(n / (n - 2)) * (1 - sum((counts / n)^2) - (1 / n) * (1 - sum(2 * hcounts / n)))
 	}
 }
 
@@ -257,6 +261,7 @@ if (length(args) == 0) { # nolint
 	run_fst <- FALSE
 	type_fst <- "both"
 	plot <- "yes"
+	genediversity <- "n"
 	for (index in seq_len(length(args))) {
 		if (args[index] == "-o") {
 			out_pref <- args[index + 1]
@@ -272,6 +277,9 @@ if (length(args) == 0) { # nolint
 		} else if (args[index] == "-f") {
 			fasta_present <- TRUE
 			fasta_file <- args[index + 1]
+			catch <- FALSE
+		} else if (args[index] == "-g") {
+			genediversity <- as.character(args[index + 1])
 			catch <- FALSE
 		} else if (args[index] == "-t") {
 			run_fst <- TRUE
@@ -297,6 +305,15 @@ if (! samples_present) {
 }
 if (all(c(! vcf_present, ! fasta_present))) {
 	stop(help("Missing argument for VCF file or fasta file list!\n"), call. = FALSE)
+}
+
+
+# set which gene diversity measure to use
+if (genediversity == "i") {
+	gd_measure <- gd_inbred
+	cat("Using an unbiased gene diversity estimate given putative inbreeding\n")
+} else {
+	gd_measure <- gd_normal
 }
 
 
@@ -460,8 +477,8 @@ if (fasta_present) {
 	## 4: average percentage missing sites across samples for that locus
 	## 5: average observed heterozygosity for genotypes in that locus
 	## 6: average nucleotide diversity for sites in that locus
-	## 7: average inbreeding coefficient for sites in the locus
-	results <- matrix(0, ncol = 8, nrow = length(fasta_list))
+	## 7: average inbreeding coefficient for polymorphic sites in the locus
+	results <- matrix(0, ncol = 7, nrow = length(fasta_list))
 	colnames(results) <- c("Samples", "Sites", "Polymorphic", "Missing", "Ho", "pi", "Fis")
 	index <- 1		# track each locus
 
@@ -541,41 +558,34 @@ if (fasta_present) {
 		hets <- polymorphic / (ncol(mymat) - missing)
 		results_samp[, "Ho"] <- results_samp[, "Ho"] + hets
 
-		### calculate stats across the population samples
-		### since this is by site, weight the values by sampling for the locus average
+		### calculate stats for the population
 		results[index, "Samples"] <- samples_present
 		results[index, "Sites"] <- ncol(mymat)
-		count_gen <- apply(mymat, 2, function(x) length(unique(x[!is.na(x)])))
-		single_mat <- mymat[, which(count_gen == 1)]
-		genotypes <- apply(single_mat, 2, function(x) unique(x[!is.na(x)]))
-		polymorphic <- sum(genotypes %in% c("k", "m", "r", "s", "w", "y", "b", "d", "h", "v"))
-		results[index, "Polymorphic"] <- sum(count_gen > 1) + polymorphic
-		miss <- apply(mymat, 2, function(x) sum(is.na(x)))
-		results[index, "Missing"] <- 100 * sum(miss) / length(mymat)
-		present <- nrow(mymat) - miss		# present data by position
-		hets <- apply(mymat, 2, het_measure)		# observed heterozygosity across sites
-		weight <- present - 1		# weight by n - 1, where n = observed genotypes
-		weighted <- weight * hets
-		results[index, "Ho"] <- sum(weighted, na.rm = TRUE) / sum(weight)
-
-		# set an if statement for the function to use? or earlier?
-		gened <- apply(mymat, 2, gd_measure)		# expected heterozygosity across sites
-
-
-		unbiased_gd <- gened * 2 * present / (2 * present - 1)	# for few individuals, adjust the estimated pi
-		weight <- 2 * present - 1		# weight by n - 1, where n = counted alleles
-		weighted <- weight * unbiased_gd
-		results[index, "pi"] <-  sum(weighted, na.rm = TRUE) / sum(weight)
+		count_gen <- apply(mymat, 2, function(x) length(unique(x[!is.na(x)])))		# count genotypes
+		single_mat <- mymat[, which(count_gen == 1)]		# select monomorphic sites
+		genotypes <- apply(single_mat, 2, function(x) unique(x[!is.na(x)]))		# return a single genotype
+		polymorphic <- sum(genotypes %in% c("k", "m", "r", "s", "w", "y", "b", "d", "h", "v"))		# note mono hets
+		results[index, "Polymorphic"] <- sum(count_gen > 1) + polymorphic		# add mono hets to multi-geno sites
+		miss <- apply(mymat, 2, function(x) sum(is.na(x)))		# count missing genotypes by site
+		results[index, "Missing"] <- 100 * sum(miss) / length(mymat)		# average percentage of missing genotypes for the locus
+		### since stats are calculated by site, weight the average by sampling (i.e. sites with fewer samples contribute less)
+		present <- nrow(mymat) - miss		# count present data by site (use to weight)
+		hets <- apply(mymat, 2, het_measure)		# observed heterozygosity by site
+		indices <- !is.na(hets)			# only include sites with estimates
+		results[index, "Ho"] <- sum(hets[indices] * present[indices]) / sum(present[indices])
+		gened <- apply(mymat, 2, gd_measure)		# pi, gene diversity, or expected heterozygosity by site
+		unbiased_gd <- gened * (2 * present / (2 * present - 1))	# for few individuals, adjust the estimated pi
+		indices <- !is.na(unbiased_gd)			# only include sites with estimates
+		results[index, "pi"] <-  sum(unbiased_gd[indices] * present[indices]) / sum(present[indices])
 
 		### calculate the fixation index inbreeding coefficient Fis
 		### from Nei 1977: Fis = (pi - Ho) / pi
 		### Note: this only uses sites with non-zero gene diversity (pi), not all sites
-		indices <- which(gened > 0)
-		fis <- (gened[indices] - hets[indices]) / gened[indices]
-		miss_fis <- miss[indices]
-		weight <- nrow(mymat) - miss_fis - 1		# weight by n - 1, where n = observed genotypes contributing to the estimate
-		weighted <- weight * fis
-		results[index, "Fis"] <- sum(weighted, na.rm = TRUE) / sum(weight)
+		indices <- which(unbiased_gd > 0)
+		fis <- (unbiased_gd[indices] - hets[indices]) / unbiased_gd[indices]
+		present_fis <- present[indices]		# compare present data at the same sites
+		indices <- !is.na(fis)			# only include sites with estimates
+		results[index, "Fis"] <- sum(fis[indices] * present_fis[indices]) / sum(present_fis[indices])
 
 		### increment the index and start on the next locus
 		index <- index + 1
@@ -611,13 +621,14 @@ if (fasta_present) {
 	summary[1, "Fis"] <- mean(results[, "Fis"], na.rm = TRUE)			# inbreeding coefficient
 	summary[1, "Fis_se"] <- stde(results[, "Fis"])			# Fis standard error
 
+	## per sample averages for comparison
 	summary[1, "Samples_loci"] <- mean(results_samp[, "Loci"])
 	summary[1, "Samples_sites"] <- mean(results_samp[, "Sites"])
 	summary[1, "Samples_polymorphic"] <- mean(results_samp[, "Polymorphic"])
-	summary[1, "Samples_missing"] <- mean(results_samp[, "Missing"])
-	heterozygosity <- results_samp[, "Ho"] / results_samp[, "Loci"]
-	summary[1, "Samples_Ho"] <- mean(heterozygosity, na.rm = TRUE)
-	summary[1, "Samples_Ho_se"] <- stde(heterozygosity)
+	summary[1, "Samples_missing"] <- 100 * mean(results_samp[, "Missing"] / results_samp[, "Sites"])
+	mean_het <- results_samp[, "Ho"] / results_samp[, "Loci"]
+	summary[1, "Samples_Ho"] <- mean(mean_het, na.rm = TRUE)
+	summary[1, "Samples_Ho_se"] <- stde(mean_het)		# this standard error is based on number of samples, not loci
 
 	## export the table to file
 	write.table(summary, file = paste0(out_pref, "_summary_fasta.txt"),
