@@ -4,14 +4,15 @@
 # Modified: Mar 2025 (added fasta input; updated Paris for polymorphic loci and per population; adjusted plotting)
 #	Apr 2025 (adjusted population distance calculations and reporting, and Paris reporting; adjusted het site calc)
 #	Feb 2026 (added saving intermediate results and memory cleanup to try to avoid/mitigate crashes)
+#	Mar 2026 (adjusted intermediate saves and changed execution to optionally run on those text files)
 # Description: evaluate multiple SNP datasets to optimise assembly parameters
-# Note: the minimum arguments are multiple VCF files (one per parameter combination)
+# The minimum arguments are multiple VCF files (one per parameter combination) OR a flag to use text files (-e)
 #	Optionally, provide text files to:
 #	indicate the association between the files and the parameter values (-p), one label per line;
-#	specify which sampleIDs are replicate pairs (-r), tab-separated and one per line;
-#	limit analysis to specific sampleIDs and populations (-s), tab-separated and one per line;
-#	analyse a custom stats file from ipyrad (if you used that) for autosomal heterozygosity output (-i)
-#	calculate autosomal heterozygosity from alignments, one fasta filename per line (-f)
+#	specify which sampleIDs are replicate pairs (-r), tab-separated and one per line (second column will be dropped after);
+#	enable population calculations and limit analysis to specific sampleIDs (-s), tab-separated with population ID;
+#	plot a custom stats file from ipyrad (if you used that) for autosomal heterozygosity output (-i)
+#	calculate rough autosomal heterozygosity from alignments, one fasta filename per line (-f)
 # Note: this script relies on genlight objects, which only use biallelic SNPs (so may underestimate SNP heterozygosity)
 ##########
 
@@ -31,6 +32,8 @@ help <- function(help_message) {
 		cat("Usage: Rscript optim_snp_data.R <optional args> VCF_file1 VCF_file2 ...\n")
 		cat("Arguments:\n")
 		cat("\t...\tPaths to VCF files in the order for plotting/comparing (e.g. sequentially increasing)\n")
+		cat("\t-e\tFlag to execute using previously-generated text files with the output prefix (no VCF files)\n")
+		cat("\t\tNote: this requires that there be a parameters file (-p) set based on the output\n")
 		cat("\t-f\tA file with names of fasta files corresponding to the VCF files, one per line\n")
 		cat("\t-i\tA custom-formatted ipyrad stats file with a header and columns containing specific values:\n")
 		cat("\t\t\"clust\" = clustering threshold; \"sample\" = sample ID; \"heterozygosity\" = autosomal heterozygosity\n")
@@ -39,6 +42,7 @@ help <- function(help_message) {
 			"one per line (e.g. \"85\" or \"M2\")\n")
 		cat("\t\tIf not provided, the parameter values will be arbitrary\n")
 		cat("\t-r\tA text file with sampleIDs of replicate pairs (tab separated, one per line)\n")
+		cat("\t\tThe second column will be dropped after error rate analysis\n")
 		cat("\t-s\tA text file with sampleIDs and populations (tab separated, one per line)\n")
 		cat("\t\tIf a samples file is provided, only those specified samples will be analysed\n")
 	} else {
@@ -53,13 +57,12 @@ help <- function(help_message) {
 ## returns a number
 paris <- function(genl) {
 	len_unique <- function(x) length(unique(x[! is.na(x)]))
-	mat <- as.matrix(genl)
-	keep_cols <- apply(mat, 2, len_unique) > 1
+	mat <- as.matrix(genl)		# rows = individuals, cols = loci
+	keep_cols <- apply(mat, 2, len_unique) > 1		# keep loci with multiple genotypes
 	mat <- mat[, keep_cols]
 	if (!is.null(dim(mat))) {
-		keep_snps <- colSums(! is.na(mat)) / nrow(mat) >= 0.80
-		sub_genl <- genl[, keep_snps]
-		length(unique(sub_genl@chromosome))
+		keep_snps <- colSums(!is.na(mat)) / nrow(mat) >= 0.80
+		length(unique(genl[, keep_snps]@chromosome))
 	} else {
 		0
 	}
@@ -81,7 +84,7 @@ mastretta_error <- function(genl, reps) {
 		na1 <- is.na(comp_mat[1, ])
 		na2 <- is.na(comp_mat[2, ])
 		na_both <- na1 & na2
-		pair_genl <- pair_genl[, !na_both]	# remove NA in both
+		pair_genl <- pair_genl[, !na_both]	# remove loci with NA in both
 		comp_mat <- as.matrix(pair_genl)
 		na1 <- is.na(comp_mat[1, ])
 		na2 <- is.na(comp_mat[2, ])
@@ -96,13 +99,13 @@ mastretta_error <- function(genl, reps) {
 		### allele error: whether shared loci differ in sequence (any SNP, including no call in one)
 		pair_genl <- pair_genl[, pair_genl@chromosome %in% in_both]
 		comp_mat <- as.matrix(pair_genl)
-		comp_mat[is.na(comp_mat)] <- 3		# so NA can be compared
+		comp_mat[is.na(comp_mat)] <- -9		# so NA can be compared
 		diff_pos <- comp_mat[1, ] != comp_mat[2, ]
 		allele_errors <- length(unique(pair_genl[, diff_pos]@chromosome))		# so that multiple in an allele aren't counted
 		allele_error <- 100 * allele_errors / (length(in_both))
 
 		### snp error: differences between any shared SNP divided by total shared
-		comp_mat <- comp_mat[, colSums(comp_mat == 3) == 0]		# remove any missing
+		comp_mat <- comp_mat[, colSums(comp_mat == -9) == 0]		# remove any missing
 		diffs <- sum(comp_mat[1, ] != comp_mat[2, ])
 		snp_error <- 100 * diffs / ncol(comp_mat)
 
@@ -120,17 +123,18 @@ mastretta_error <- function(genl, reps) {
 ## returns a vector of average distances
 pop_dist <- function(vcfr, sampleids, pops) {
 	### load libraries
-	suppressMessages(library(ape))
-	suppressMessages(library(pofadinr))
+	suppressMessages(require(ape))
+	suppressMessages(require(pofadinr))
 
 	### cycle through the populations, calculating distances
 	pop_names <- unique(pops)
 	dists <- vector()
 	index <- 1
+	cat("Populations with fewer than three samples not used (designated with brackets)\n")
 	cat(paste0("Population (of ", length(pop_names), "): "))
 	for (pop in pop_names) {
 		samples <- sampleids[pops == pop]
-		if (length(samples) < 2) {		# can't compute
+		if (length(samples) < 3) {		# average distance not meaningful
 			cat(paste0("(", index, ") "))
 			index <- index + 1
 			next
@@ -186,6 +190,7 @@ if (length(args) == 0) {
 catch_args <- vector("list")
 extra <- 1
 catch <- TRUE
+skip_VCF <- FALSE
 ipyrad_present <- FALSE
 ipyrad_file <- ""
 out_pref <- "out"
@@ -221,6 +226,9 @@ for (index in seq_len(length(args))) {
 		fasta_present <- TRUE
 		fasta_file <- args[index + 1]
 		catch <- FALSE
+	} else if (args[index] == "-e") {
+		skip_VCF <- TRUE
+		catch <- FALSE
 	} else {
 		if (catch) {
 			catch_args[extra] <- args[index]
@@ -232,7 +240,11 @@ for (index in seq_len(length(args))) {
 }
 
 if (length(catch_args) < 1) {
-	stop(help("Missing VCF file(s)!\n"), call. = FALSE)
+	if (skip_VCF) {
+		cat("Using pre-generated output for execution instead of VCF files\n")
+	} else {
+		stop(help("Missing VCF file(s)!\n"), call. = FALSE)
+	}
 }
 
 
@@ -245,6 +257,8 @@ if (ipyrad_present) {
 
 if (params_present) {
 	params <- as.character(read.table(params_file, header = FALSE)[, 1])
+} else if (skip_VCF) {
+	stop(help("Missing parameters file for execution without VCFs!\n"), call. = FALSE)
 } else {
 	params <- unlist(lapply(seq_len(length(catch_args)), function(x) paste0("P", x)))
 }
@@ -274,84 +288,67 @@ if (fasta_present) {
 ##########
 # execute the analyses
 
-## initiate the matrices for holding the results and set file names
+## initiate the matrices for holding the results and designate output files
+error_mat <- matrix(ncol = 4)
+colnames(error_mat) <- c("param", "locus_err", "allele_err", "snp_err")
+error_file <- paste0(out_pref, "_error.txt")
+
 size_mat <- matrix(ncol = 3)
 colnames(size_mat) <- c("param", "num_loci", "num_snps")
-size_file <- paste0(out_pref, "_size.rda")
+size_file <- paste0(out_pref, "_size.txt")
 
 paris_mat <- matrix(ncol = 2)
 colnames(paris_mat) <- c("param", "num_loci")
-paris_file <- paste0(out_pref, "_paris.rda")
+paris_file <- paste0(out_pref, "_paris.txt")
 
 paris_pop_mat <- matrix(ncol = 2)
 colnames(paris_pop_mat) <- c("param", "num_loci")
-paris_pop_file <- paste0(out_pref, "_paris_pops.rda")
+paris_pop_file <- paste0(out_pref, "_paris_pop.txt")
 
-error_mat <- matrix(ncol = 4)
-colnames(error_mat) <- c("param", "locus_err", "allele_err", "snp_err")
-error_file <- paste0(out_pref, "_error.rda")
+het_mat <- matrix(ncol = 3)
+colnames(het_mat) <- c("param", "sample", "het")
+het_file <- paste0(out_pref, "_het.txt")
 
-dists_pop <- matrix(ncol = 2)
-colnames(dists_pop) <- c("param", "dist")
-dists_file <- paste0(out_pref, "_distspop.rda")
+dists_mat <- matrix(ncol = 2)
+colnames(dists_mat) <- c("param", "dist")
+dists_file <- paste0(out_pref, "_dists.txt")
 
-het_obs <- matrix(ncol = 3)
-colnames(het_obs) <- c("param", "sample", "het")
-het_file <- paste0(out_pref, "_snphet.rda")
-
-het_fas <- matrix(ncol = 3)
-colnames(het_fas) <- c("param", "sample", "het")
-fastahet_file <- paste0(out_pref, "_fastahet.rda")
-
-## check if previous run results files exist (e.g. after crash), and if so, load them
-loaded <- FALSE
-
-if (file.exists(size_file)) {
-	load(size_file)
-	loaded <- TRUE
-}
-if (file.exists(paris_file)) {
-	load(paris_file)
-}
-if (file.exists(error_file)) {
-	load(error_file)
-}
-if (file.exists(het_file)) {
-	load(het_file)
-}
-
-if (samples_present) {
-	if (file.exists(dists_file)) {
-		load(dists_file)
-	}
-	if (file.exists(paris_pop_file)) {
-		load(paris_pop_file)
-	}
-}
+fastahet_mat <- matrix(ncol = 3)
+colnames(fastahet_mat) <- c("param", "sample", "het")
+fastahet_file <- paste0(out_pref, "_fastahet.txt")
 
 ## cycle through the VCF files
 index <- 1
 for (vcf_file in catch_args) {
 	cat(paste0("\nProcessing VCF file ", as.character(index), " of ", as.character(length(catch_args)), "...\n"))
 	vcfr <- read.vcfR(vcf_file, verbose = FALSE)
-	genl <- suppressWarnings(vcfR2genlight(vcfr))
-	cat(paste0("Read in and converted the VCF to a genlight with ", nInd(genl), " samples, ",
-		length(unique(genl@chromosome)), " loci, and ",
-		nLoc(genl), " SNPs\n"))
 
-	## if there is a samples file, subset the genl
+	## if there is a samples file, subset the vcfR
 	if (samples_present) {
-		keep_samples <- sampleids
-		keep_pops <- pops
-		genl <- genl[match(keep_samples, genl@ind.names)]
-		cat(paste0("Subsetted the genlight to ", nInd(genl), " samples\n"))
+		vcfr_samples <- colnames(vcfr@gt)[2: length(colnames(vcfr@gt))]		# the first column is FORMAT
+		keep_samples <- sampleids[sampleids %in% vcfr_samples]
+		keep_pops <- pops[sampleids %in% vcfr_samples]
+		vcfr <- vcfr[sample = keep_samples]
+		cat(paste0("Subsetted the VCF to ", ncol(vcfr@gt) - 1, " samples\n"))
+		not_found <- sampleids[! sampleids %in% vcfr_samples]
+		if (length(not_found) > 0) {
+			cat(paste0("Could not find ", length(not_found), " samples from the samples table in the VCF\n"))
+			cat("Samples: ")
+			cat(not_found, sep = " ")
+			cat("\n")
+		}
 	}
+
+	## convert to genlight
+	genl <- suppressWarnings(vcfR2genlight(vcfr))
+	cat(paste0("Converted the VCF to a genlight with ", nInd(genl), " samples, ",
+		length(unique(genl@chromosome)), " loci, and ", nLoc(genl), " SNPs\n"))
 
 	## if there is a replicates file, calculate error rates
 	## and remove some samples afterward
 	if (reps_present) {
 		cat("Running error rate assessments using replicates\n")
-		# check that the rep pairs are present in the genlight
+		## check that the rep pairs are present in the genlight
 		rep_mat <- matrix(ncol = 2)
 		for (pair_row in seq_len(nrow(reps_table))) {
 			sample1 <- reps_table[pair_row, 1]
@@ -366,23 +363,21 @@ for (vcf_file in catch_args) {
 				c(paste0("No sample(s) found for replicate pair: ", sample1, " ", sample2, "\n"))
 			}
 		}
+		## calculate error and record it
 		merror <- mastretta_error(genl, rep_mat)
-		out_mat <- as.matrix(cbind(rep(params[index], nrow(merror)),
-			merror))
-		if (loaded) {
-			error_mat <- rbind(error_mat, out_mat)
-		} else if (index == 1) {
-			error_mat <- out_mat
-		} else {
-			error_mat <- rbind(error_mat, out_mat)
-		}
+		out_mat <- as.matrix(cbind(rep(params[index], nrow(merror)), merror))
+		write.table(out_mat, file = error_file, append = TRUE, sep = "\t",
+			row.names = FALSE, col.names = FALSE, quote = FALSE)		# output to file
+		error_mat <- rbind(error_mat, out_mat)
+		error_mat <- error_mat[!rowSums(is.na(error_mat)) == ncol(error_mat), ]		# remove rows with all NA (the first one)
 
 		## remove one of the reps from the genlight
-		genl <- genl[-match(rep_mat[, 2], genl@ind.names)]
+		reps_to_drop <- unique(rep_mat[, 2])
+		genl <- genl[-match(reps_to_drop, genl@ind.names)]
 		cat(paste0("Subsetted the genlight to ", nInd(genl), " samples\n"))
 		## if there is a samples file, remove the reps (and corresponding pops) from those and from the vcfr
 		if (samples_present) {
-			drop_indices <- keep_samples %in% rep_mat[, 2]
+			drop_indices <- keep_samples %in% reps_to_drop
 			keep_samples <- keep_samples[!drop_indices]
 			keep_pops <- keep_pops[!drop_indices]
 			vcfr <- vcfr[sample = keep_samples]
@@ -390,97 +385,71 @@ for (vcf_file in catch_args) {
 	}
 
 	## summarise number of loci and SNPs
-	if (loaded) {
-		size_mat <- rbind(size_mat, c(params[index], length(unique(genl@chromosome)), nLoc(genl)))
-	} else if (index == 1) {
-		size_mat[1, ] <- c(params[index], length(unique(genl@chromosome)), nLoc(genl))
-	} else {
-		size_mat <- rbind(size_mat, c(params[index], length(unique(genl@chromosome)), nLoc(genl)))
-	}
+	size_row <- c(params[index], length(unique(genl@chromosome)), nLoc(genl))
+	cat(size_row, file = size_file, append = TRUE, sep = "\t")		# output to file
+	cat("\n", file = size_file, append = TRUE)
+	size_mat <- rbind(size_mat, size_row)
+	size_mat <- size_mat[!rowSums(is.na(size_mat)) == ncol(size_mat), ]		# remove rows with all NA (the first one)
 
 	## calculate Paris
 	cat("Assessing how many polymorphic loci are shared by at least 80% of samples\n")
 	paris_num <- paris(genl)
-	if (loaded) {
-		paris_mat <- rbind(paris_mat, c(params[index], paris_num))
-	} else if (index == 1) {
-		paris_mat[1, ] <- c(params[index], paris_num)
-	} else {
-		paris_mat <- rbind(paris_mat, c(params[index], paris_num))
-	}
+	paris_row <- c(params[index], paris_num)
+	cat(paris_row, file = paris_file, append = TRUE, sep = "\t")		# output to file
+	cat("\n", file = paris_file, append = TRUE)
+	paris_mat <- rbind(paris_mat, paris_row)
+	paris_mat <- paris_mat[!rowSums(is.na(paris_mat)) == ncol(paris_mat), ]		# remove rows with all NA (the first one)
+
 	if (samples_present) {
 		cat("Also assessing polymorphic loci shared by at least 80% of samples per population\n")
 		paris_pop_counts <- vector()
-		pop_names <- unique(keep_pops)
+		pop_names <- sort(unique(keep_pops))
 		unused <- vector()
 		pop_index <- 1
 		cat(paste0("Population (of ", length(pop_names), "): "))
 		for (pop in pop_names) {
 			samples <- keep_samples[keep_pops == pop]
-			cat(paste0(pop_index, " "))
 			if (length(samples) > 4) {
+				cat(paste0(pop_index, " "))
 				subgenl <- genl[match(samples, genl@ind.names)]
 				paris_num_pop <- paris(subgenl)
 				paris_pop_counts[pop_index] <- paris_num_pop
-				pop_index <- pop_index + 1
 			} else {
+				cat(paste0("(", pop_index, ") "))
 				unused <- append(unused, pop_names[pop_index])
-				pop_index <- pop_index + 1
 			}
+			pop_index <- pop_index + 1
 		}
 		cat("\n")
 		if (length(unused) > 0) {
 			cat(paste0("The following populations had fewer than 5 individuals and were not used: ",
 				paste0(unused, collapse = " "), "\n"))
 		}
-		out_mat <- as.matrix(cbind(rep(params[index], length(paris_pop_counts)),
-			paris_pop_counts))
-		if (loaded) {
-			paris_pop_mat <- rbind(paris_pop_mat, out_mat)
-		} else if (index == 1) {
-			paris_pop_mat <- out_mat
-		} else {
-			paris_pop_mat <- rbind(paris_pop_mat, out_mat)
-		}
+		out_mat <- as.matrix(cbind(rep(params[index], length(paris_pop_counts)), paris_pop_counts))
+		write.table(out_mat, file = paris_pop_file, append = TRUE, sep = "\t",
+			row.names = FALSE, col.names = FALSE, quote = FALSE)		# output to file
+		paris_pop_mat <- rbind(paris_pop_mat, out_mat)
+		paris_pop_mat <- paris_pop_mat[!rowSums(is.na(paris_pop_mat)) == ncol(paris_pop_mat), ]		# remove rows with all NA (the first one)
 	}
 
 	## calculate heterozygosity
 	cat("Calculating SNP heterozygosity\n")
 	het_df <- het_est(genl)
-	out_mat <- as.matrix(cbind(rep(params[index], nrow(het_df)),
-		rownames(het_df),
-		het_df[, 1]))
-	if (loaded) {
-		het_obs <- rbind(het_obs, out_mat)
-	} else if (index == 1) {
-		het_obs <- out_mat
-	} else {
-		het_obs <- rbind(het_obs, out_mat)
-	}
+	out_mat <- as.matrix(cbind(rep(params[index], nrow(het_df)), rownames(het_df), het_df[, 1]))
+	write.table(out_mat, file = het_file, append = TRUE, sep = "\t",
+		row.names = FALSE, col.names = FALSE, quote = FALSE)		# output to file
+	het_mat <- rbind(het_mat, out_mat)
+	het_mat <- het_mat[!rowSums(is.na(het_mat)) == ncol(het_mat), ]		# remove rows with all NA (the first one)
 
 	## if there is a samples file, calculate within population distances
 	if (samples_present) {
 		cat("Calculating within population genetic (GENPOFAD) distances\n")
 		dists <- pop_dist(vcfr, keep_samples, keep_pops)
-		out_mat <- as.matrix(cbind(rep(params[index], length(dists)),
-			dists))
-		if (loaded) {
-			dists_pop <- rbind(dists_pop, out_mat)
-		} else if (index == 1) {
-			dists_pop <- out_mat
-		} else {
-			dists_pop <- rbind(dists_pop, out_mat)
-		}
-	}
-
-	## save the results matrices in case of a crash
-	save(size_mat, file = size_file)
-	save(paris_mat, file = paris_file)
-	save(error_mat, file = error_file)
-	save(het_obs, file = het_file)
-	if (samples_present) {
-		save(dists_pop, file = dists_file)
-		save(paris_pop_mat, file = paris_pop_file)
+		out_mat <- as.matrix(cbind(rep(params[index], length(dists)), dists))
+		write.table(out_mat, file = dists_file, append = TRUE, sep = "\t",
+			row.names = FALSE, col.names = FALSE, quote = FALSE)		# output to file
+		dists_mat <- rbind(dists_mat, out_mat)
+		dists_mat <- dists_mat[!rowSums(is.na(dists_mat)) == ncol(dists_mat), ]		# remove rows with all NA (the first one)
 	}
 
 	## remove large variables and cleanup memory
@@ -493,13 +462,7 @@ for (vcf_file in catch_args) {
 
 ## if fasta files are present, cycle through them
 if (fasta_present) {
-	# check if this is run with the previous or after restart
-	# (ensure that a smaller param file for a restart doesn't influence the fasta row names)
-	if (length(fastas) > length(params)) {
-		params <- unlist(lapply(seq_len(length(fastas)), function(x) paste0("P", x)))
-	}
-
-	suppressMessages(library(ape))
+	suppressMessages(require(ape))
 	index <- 1
 	for (fasta_file in fastas) {
 		cat(paste0("\nProcessing fasta file ", as.character(index), " of ", as.character(length(fastas)), "...\n"))
@@ -514,14 +477,15 @@ if (fasta_present) {
 		## calculate observed autosomal heterozygosity
 		hets <- apply(mymat, 1, het_measure)
 		het_df <- as.data.frame(hets)
-		out_mat <- as.matrix(cbind(rep(params[index], nrow(het_df)),
-			rownames(het_df),
-			het_df[, 1]))
-		if (index == 1) {
-			het_fas <- out_mat
-		} else {
-			het_fas <- rbind(het_fas, out_mat)
-		}
+		out_mat <- as.matrix(cbind(rep(params[index], nrow(het_df)), rownames(het_df), het_df[, 1]))
+		write.table(out_mat, file = fastahet_file, append = TRUE, sep = "\t",
+			row.names = FALSE, col.names = FALSE, quote = FALSE)		# output to file
+		fastahet_mat <- rbind(fastahet_mat, out_mat)
+		fastahet_mat <- fastahet_mat[!rowSums(is.na(fastahet_mat)) == ncol(fastahet_mat), ]		# remove rows with all NA (the first one)
+
+		## remove large variables and cleanup memory
+		rm(fasta, mymat)
+		gc()
 
 		## increment
 		index <- index + 1
@@ -531,15 +495,52 @@ if (fasta_present) {
 
 ##########
 # plot
-cat("\nPlotting...\n")
+cat("\nPlotting ")
+
+# determine if using variables in this run, or reading in from previous
+if (skip_VCF) {
+	cat("using data from previous runs in output text files\n")
+
+	if (file.exists(error_file)) {
+		error_mat <- as.matrix(read.table(error_file, sep = "\t", header = FALSE))
+		colnames(error_mat) <- c("param", "locus_err", "allele_err", "snp_err")
+	}
+
+	size_mat <- as.matrix(read.table(size_file, sep = "\t", header = FALSE))
+	colnames(size_mat) <- c("param", "num_loci", "num_snps")
+
+	paris_mat <- as.matrix(read.table(paris_file, sep = "\t", header = FALSE))
+	colnames(paris_mat) <- c("param", "num_loci")
+
+	if (file.exists(paris_pop_file)) {
+		paris_pop_mat <- as.matrix(read.table(paris_pop_file, sep = "\t", header = FALSE))
+		colnames(paris_pop_mat) <- c("param", "num_loci")
+	}
+
+	het_mat <- as.matrix(read.table(het_file, sep = "\t", header = FALSE))
+	colnames(het_mat) <- c("param", "sample", "het")
+
+	if (file.exists(dists_file)) {
+		dists_mat <- as.matrix(read.table(dists_file, sep = "\t", header = FALSE))
+		colnames(dists_mat) <- c("param", "dist")
+	}
+
+	if (file.exists(fastahet_file)) {
+		fastahet_mat <- as.matrix(read.table(fastahet_file, sep = "\t", header = FALSE))
+		colnames(fastahet_mat) <- c("param", "sample", "het")
+	}
+} else {
+	cat("using only data from the VCFs/fasta files of this run\n")
+}
 
 # adjust margins to fit custom labels on x-axis
 par(mar = c(7, 4, 4, 1) + 0.1)
 
 # start the pdf
-pdf(paste0(out_pref, "_optim.pdf"), width = 10, height = 10)
+pdf(paste0(out_pref, "_plots.pdf"), width = 10, height = 10)
 
 ## size
+size_mat <- size_mat[match(params, size_mat[, 1]), ]
 plot(NULL, xlim = c(1, nrow(size_mat)), ylim = c(0, max(as.numeric(size_mat[, 2])) * 1.05),
 	main = "Total number of loci recovered",
 	xaxt = "n", ylab = "Number of loci", xlab = "")
@@ -549,6 +550,7 @@ labels <- size_mat[, 1]
 yrange <- max(as.numeric(size_mat[, 2])) * 1.05
 text(seq_len(nrow(size_mat)), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
 	labels = labels, xpd = TRUE)
+
 plot(NULL, xlim = c(1, nrow(size_mat)), ylim = c(0, max(as.numeric(size_mat[, 3])) * 1.05),
 	main = "Total number of biallelic SNPs recovered",
 	xaxt = "n", ylab = "Number of biallelic SNPs", xlab = "")
@@ -559,6 +561,7 @@ text(seq_len(nrow(size_mat)), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1
 	labels = labels, xpd = TRUE)
 
 ## Paris
+paris_mat <- paris_mat[match(params, paris_mat[, 1]), ]
 plot(NULL, xlim = c(1, nrow(paris_mat)), ylim = c(0, max(as.numeric(paris_mat[, 2])) * 1.05),
 	main = "Number of polymorphic loci recovered in >= 80% of all samples",
 	xaxt = "n", ylab = "Number of loci", xlab = "")
@@ -568,115 +571,122 @@ yrange <- max(as.numeric(paris_mat[, 2])) * 1.05
 axis(1, at = seq_len(nrow(paris_mat)), labels = FALSE)
 text(seq_len(nrow(paris_mat)), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
 	labels = labels, xpd = TRUE)
-if (samples_present) {
-	paris_pop_mat <- as.data.frame(paris_pop_mat)
-	paris_pop_mat[, 1] <- factor(paris_pop_mat[, 1], levels = unique(paris_pop_mat[, 1]))
-	boxplot(as.numeric(paris_pop_mat[, 2]) ~ paris_pop_mat[, 1],
+
+if (nrow(paris_pop_mat) > 1) {
+	paris_pop_df <- as.data.frame(paris_pop_mat)
+	mylevels <- paris_pop_df[, 1][match(params, paris_pop_df[, 1])]
+	paris_pop_df[, 1] <- factor(paris_pop_df[, 1], levels = mylevels)
+	paris_pop_df[, 2] <- as.numeric(paris_pop_df[, 2])
+
+	boxplot(paris_pop_df[, 2] ~ paris_pop_df[, 1],
 		main = "Number of polymorphic loci recovered in >= 80% of samples within each population",
-		ylim = c(0, max(as.numeric(paris_pop_mat[, 2]), na.rm = TRUE) * 1.05),
+		ylim = c(0, max(paris_pop_df[, 2], na.rm = TRUE) * 1.05),
 		ylab = "Number of loci", xlab = "", xaxt = "n")
-	labels <- unique(paris_pop_mat[, 1])
-	yrange <- max(as.numeric(paris_pop_mat[, 2]), na.rm = TRUE) * 1.05
-	axis(1, at = seq_len(length(unique(paris_pop_mat[, 1]))), labels = FALSE)
-	text(seq_len(length(unique((paris_pop_mat[, 1])))), par("usr")[3] - (0.03 * yrange),
-		srt = 45, adj = 1, labels = labels, xpd = TRUE)
+	yrange <- max(paris_pop_df[, 2], na.rm = TRUE) * 1.05
+	axis(1, at = seq_len(length(mylevels)), labels = FALSE)
+	text(seq_len(length(mylevels)), par("usr")[3] - (0.03 * yrange),
+		srt = 45, adj = 1, labels = mylevels, xpd = TRUE)
 }
 
 ## heterozygosity
-het_obs <- as.data.frame(het_obs)
+het_df <- as.data.frame(het_mat)
+mylevels <- het_df[, 1][match(params, het_df[, 1])]
+het_df[, 1] <- factor(het_df[, 1], levels = mylevels)
+het_df[, 3] <- as.numeric(het_df[, 3])
+
+boxplot(het_df[, 3] * 100 ~ het_df[, 1],
+	ylim = c(0, max(het_df[, 3] * 100) * 1.05),
+	main = "Observed SNP heterozygosity",
+	ylab = "Heterozygosity (%)", xlab = "", xaxt = "n")
+yrange <- max(het_df[, 3] * 100) * 1.05
+axis(1, at = seq_len(length(mylevels)), labels = FALSE)
+text(seq_len(length(mylevels)), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
+	labels = mylevels, xpd = TRUE)
+
 if (ipyrad_present) {
-	het_stats[, "clust"] <- factor(het_stats[, "clust"], levels = unique(het_stats[, "clust"]))
-	boxplot(as.numeric(het_stats[, "heterozygosity"]) * 100 ~ het_stats[, "clust"],
-		ylim = c(0, max(as.numeric(het_stats[, "heterozygosity"]) * 100) * 1.05),
+	mylevels <- unique(het_stats[, "clust"])
+	het_stats[, "clust"] <- factor(het_stats[, "clust"], levels = mylevels)
+	het_stats[, "heterozygosity"] <- as.numeric(het_stats[, "heterozygosity"])
+
+	boxplot(het_stats[, "heterozygosity"] * 100 ~ het_stats[, "clust"],
+		ylim = c(0, max(het_stats[, "heterozygosity"] * 100) * 1.05),
 		main = "Autosomal heterozygosity (ipyrad stats)\n(ambiguous bases in consensus sequences within samples)",
 		ylab = "Heterozygous sites (%)", xlab = "", xaxt = "n")
-	labels <- unique(het_stats[, "clust"])
-	yrange <- max(as.numeric(het_stats[, "heterozygosity"]) * 100) * 1.05
-	axis(1, at = seq_len(length(unique(het_stats[, "clust"]))), labels = FALSE)
-	text(seq_len(length(unique((het_stats[, "clust"])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
-		labels = labels, xpd = TRUE)
-
-	het_obs[, 1] <- factor(het_obs[, 1], levels = unique(het_obs[, 1]))
-	boxplot(as.numeric(het_obs[, 3]) * 100 ~ het_obs[, 1],
-		ylim = c(0, max(as.numeric(het_obs[, 3]) * 100) * 1.05),
-		main = "Observed SNP heterozygosity",
-		ylab = "Heterozygosity (%)", xlab = "", xaxt = "n")
-	labels <- unique(het_obs[, 1])
-	yrange <- max(as.numeric(het_obs[, 3]) * 100) * 1.05
-	axis(1, at = seq_len(length(unique(het_obs[, 1]))), labels = FALSE)
-	text(seq_len(length(unique((het_obs[, 1])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
-		labels = labels, xpd = TRUE)
-} else {
-	het_obs[, 1] <- factor(het_obs[, 1], levels = unique(het_obs[, 1]))
-	boxplot(as.numeric(het_obs[, 3]) * 100 ~ het_obs[, 1],
-		ylim = c(0, max(as.numeric(het_obs[, 3]) * 100) * 1.05),
-		main = "Observed SNP heterozygosity",
-		ylab = "Heterozygosity (%)", xlab = "", xaxt = "n")
-	labels <- unique(het_obs[, 1])
-	yrange <- max(as.numeric(het_obs[, 3]) * 100) * 1.05
-	axis(1, at = seq_len(length(unique(het_obs[, 1]))), labels = FALSE)
-	text(seq_len(length(unique((het_obs[, 1])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
-		labels = labels, xpd = TRUE)
+	yrange <- max(het_stats[, "heterozygosity"] * 100) * 1.05
+	axis(1, at = seq_len(length(mylevels)), labels = FALSE)
+	text(seq_len(length(mylevels)), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
+		labels = mylevels, xpd = TRUE)
 }
-if (fasta_present) {
-	het_fas <- as.data.frame(het_fas)
-	het_fas[, 1] <- factor(het_fas[, 1], levels = unique(het_fas[, 1]))
-	boxplot(as.numeric(het_fas[, 3]) * 100 ~ het_fas[, 1],
-		ylim = c(0, max(as.numeric(het_fas[, 3]) * 100) * 1.05),
+
+if (nrow(fastahet_mat) > 1) {
+	fastahet_df <- as.data.frame(fastahet_mat)
+	mylevels <- fastahet_df[, 1][match(params, fastahet_df[, 1])]
+	fastahet_df[, 1] <- factor(fastahet_df[, 1], levels = mylevels)
+	fastahet_df[, 3] <- as.numeric(fastahet_df[, 3])
+
+	boxplot(fastahet_df[, 3] * 100 ~ fastahet_df[, 1],
+		ylim = c(0, max(fastahet_df[, 3] * 100) * 1.05),
 		main = "Observed autosomal heterozygosity (fasta file)",
 		ylab = "Heterozygosity (%)", xlab = "", xaxt = "n")
-	labels <- unique(het_fas[, 1])
-	yrange <- max(as.numeric(het_fas[, 3]) * 100) * 1.05
-	axis(1, at = seq_len(length(unique(het_fas[, 1]))), labels = FALSE)
-	text(seq_len(length(unique((het_fas[, 1])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
-		labels = labels, xpd = TRUE)
+	yrange <- max(fastahet_df[, 3] * 100) * 1.05
+	axis(1, at = seq_len(length(mylevels)), labels = FALSE)
+	text(seq_len(length(mylevels)), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
+		labels = mylevels, xpd = TRUE)
 }
 
 ## error
-if (reps_present) {
-	error_mat <- as.data.frame(error_mat)
-	error_mat[, 1] <- factor(error_mat[, 1], levels = unique(error_mat[, 1]))
-	boxplot(as.numeric(error_mat[, 2]) ~ error_mat[, 1],
+if (nrow(error_mat) > 1) {
+	error_df <- as.data.frame(error_mat)
+	mylevels <- error_df[, 1][match(params, error_df[, 1])]
+	error_df[, 1] <- factor(error_df[, 1], levels = mylevels)
+	error_df[, 2] <- as.numeric(error_df[, 2])
+	error_df[, 3] <- as.numeric(error_df[, 3])
+	error_df[, 4] <- as.numeric(error_df[, 4])
+
+	boxplot(error_df[, 2] ~ error_df[, 1],
 		main = paste0("Locus error rates\n",
 			"(loci present in one rep but not the other, relative to total in either/both)"),
-		ylim = c(0, max(as.numeric(error_mat[, 2])) * 1.05),
+		ylim = c(0, max(error_df[, 2]) * 1.05),
 		ylab = "Locus error rate (%)", xlab = "", xaxt = "n")
-	labels <- unique(error_mat[, 1])
-	yrange <- max(as.numeric(error_mat[, 2])) * 1.05
-	axis(1, at = seq_len(length(unique(error_mat[, 1]))), labels = FALSE)
-	text(seq_len(length(unique((error_mat[, 1])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
-		labels = labels, xpd = TRUE)
-	boxplot(as.numeric(error_mat[, 3]) ~ error_mat[, 1],
+	yrange <- max(error_df[, 2]) * 1.05
+	axis(1, at = seq_len(length(mylevels)), labels = FALSE)
+	text(seq_len(length(mylevels)), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
+		labels = mylevels, xpd = TRUE)
+
+	boxplot(error_df[, 3] ~ error_df[, 1],
 		main = "Allele error rates\n(loci present in both that differ in sequence, relative to total in both)",
-		ylim = c(0, max(as.numeric(error_mat[, 3])) * 1.05),
+		ylim = c(0, max(error_df[, 3]) * 1.05),
 		ylab = "Allele error rate (%)", xlab = "", xaxt = "n")
-	axis(1, at = seq_len(length(unique(error_mat[, 1]))), labels = FALSE)
-	yrange <- max(as.numeric(error_mat[, 3])) * 1.05
-	text(seq_len(length(unique((error_mat[, 1])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
-		labels = labels, xpd = TRUE)
-	boxplot(as.numeric(error_mat[, 4]) ~ error_mat[, 1],
+	axis(1, at = seq_len(length(mylevels)), labels = FALSE)
+	yrange <- max(error_df[, 3]) * 1.05
+	text(seq_len(length(unique((error_df[, 1])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
+		labels = mylevels, xpd = TRUE)
+
+	boxplot(error_df[, 4] ~ error_df[, 1],
 		main = "SNP error rates\n(SNPs called in both that differ, relative to total called in both)",
-		ylim = c(0, max(as.numeric(error_mat[, 4])) * 1.05),
+		ylim = c(0, max(error_df[, 4]) * 1.05),
 		ylab = "SNP error rate (%)", xlab = "", xaxt = "n")
-	axis(1, at = seq_len(length(unique(error_mat[, 1]))), labels = FALSE)
-	yrange <- max(as.numeric(error_mat[, 4])) * 1.05
-	text(seq_len(length(unique((error_mat[, 1])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
-		labels = labels, xpd = TRUE)
+	axis(1, at = seq_len(length(mylevels)), labels = FALSE)
+	yrange <- max(error_df[, 4]) * 1.05
+	text(seq_len(length(unique((error_df[, 1])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
+		labels = mylevels, xpd = TRUE)
 }
 
 ## within population distances
-if (samples_present) {
-	dists_pop <- as.data.frame(dists_pop)
-	dists_pop[, 1] <- factor(dists_pop[, 1], levels = unique(dists_pop[, 1]))
-	boxplot(as.numeric(dists_pop[, 2]) ~ dists_pop[, 1],
+if (nrow(dists_mat) > 1) {
+	dists_df <- as.data.frame(dists_mat)
+	mylevels <- dists_df[, 1][match(params, dists_df[, 1])]
+	dists_df[, 1] <- factor(dists_df[, 1], levels = mylevels)
+	dists_df[, 2] <- as.numeric(dists_df[, 2])
+
+	boxplot(dists_df[, 2] ~ dists_df[, 1],
 		main = "Within Population Genetic Distances",
-		ylim = c(0, max(as.numeric(dists_pop[, 2]), na.rm = TRUE) * 1.05),
+		ylim = c(0, max(dists_df[, 2], na.rm = TRUE) * 1.05),
 		ylab = "Average GENPOFAD distance", xlab = "", xaxt = "n")
-	labels <- unique(dists_pop[, 1])
-	yrange <- max(as.numeric(dists_pop[, 2]), na.rm = TRUE) * 1.05
-	axis(1, at = seq_len(length(unique(dists_pop[, 1]))), labels = FALSE)
-	text(seq_len(length(unique((dists_pop[, 1])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
-		labels = labels, xpd = TRUE)
+	yrange <- max(dists_df[, 2], na.rm = TRUE) * 1.05
+	axis(1, at = seq_len(length(mylevels)), labels = FALSE)
+	text(seq_len(length(unique((dists_df[, 1])))), par("usr")[3] - (0.03 * yrange), srt = 45, adj = 1,
+		labels = mylevels, xpd = TRUE)
 }
 
 # stop the pdf
