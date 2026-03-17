@@ -468,6 +468,23 @@ if (fasta_present) {
 		cat(paste0("\nProcessing fasta file ", as.character(index), " of ", as.character(length(fastas)), "...\n"))
 		fasta <- read.dna(fasta_file, format = "fasta")
 
+		## if samples and/or replicates were included, drop any that are remaining in the fasta file
+		keep_samples <- rownames(fasta)
+		input <- length(keep_samples)
+		if (samples_present) {
+			keep_samples <- sampleids[sampleids %in% keep_samples]
+		}
+		if (reps_present) {
+			reps_to_drop <- unique(reps_table[, 2])
+			drop_indices <- keep_samples %in% reps_to_drop
+			keep_samples <- keep_samples[!drop_indices]
+		}
+		output <- length(keep_samples)
+		if (output < input) {
+			fasta <- fasta[keep_samples, ]
+			cat(paste0("Subsetted the fasta DNAbin to ", length(rownames(fasta)), " samples\n"))
+		}
+
 		## convert to matrix and correct the DNA so that missing data is coded as NA
 		mymat <- as.matrix(as.character(fasta))
 		mymat[mymat == "?"] <- NA
