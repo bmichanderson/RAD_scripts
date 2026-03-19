@@ -4,6 +4,7 @@
 # Author: B.M. Anderson
 # Date: Dec 2023
 # Modified: Feb 2026 (adjusted threshold options and screen output format)
+#	Mar 2026 (added minimum threshold option)
 # Description: report a clone threshold for a set of sample comparisons (from vcf_similarity.py),
 #	based on replicate pairs in a text file; also report what sample comparisons (not reps) are below it
 ##########################
@@ -24,7 +25,7 @@ parser.add_argument(type = str, dest = 'comp_file', help = 'The comparisons file
 	'individual 1 (string), individual 2 (string), distance (float)')
 parser.add_argument('-r', type = str, dest = 'reps', help = 'A text file of replicate pairs, tab separated, one pair per line')
 parser.add_argument('-t', type = str, dest = 'thresh', help = 'Threshold type to use: "d" double the average (default), ' + \
-	'"s" two standard deviations above the mean, or "q" 1.5 * IQR above Q3')
+	'"s" two standard deviations above the mean, "q" 1.5 * IQR above Q3, or "m" the minimum of these')
 
 
 # parse the command line
@@ -104,6 +105,8 @@ elif thresh == 's':
 	threshold = stdev_threshold
 elif thresh == 'q':
 	threshold = outlier_threshold
+elif thresh == 'm':
+	threshold = min(avg_threshold, stdev_threshold, outlier_threshold)
 else:
 	print('Unrecognised option for threshold argument -t\n')
 	parser.print_help(sys.stderr)
@@ -130,13 +133,13 @@ for comp in complist:
 
 if len(rephighcomps) > 0:
 	print('')
-	print('Replicate combos above threshold:')
+	print('Replicate combos above threshold (would not be detected as clones):')
 	for item in sorted(rephighcomps, key = lambda x: x[2]):
 		print('\t'.join([item[0], item[1], '{:.8f}'.format(float(item[2]))]))
 
 if len(replowcomps) > 0:
 	print('')
-	print('Unlisted replicate combos below threshold:')
+	print('Combos below threshold involving replicates (unlisted? clones?):')
 	for item in sorted(replowcomps, key = lambda x: x[2]):
 		print('\t'.join([item[0], item[1], '{:.8f}'.format(float(item[2]))]))
 
