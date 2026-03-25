@@ -5,7 +5,7 @@
 # Date: Sep 2021
 # Modified: Nov 2021 (added a sample exclude option); Dec 2023 (increased summary and added consensus);
 #	Dec 2023 (extended to Stacks allelic output); Mar 2025 (decreased counter reporting; adjusted consensus calculations; improved Stacks efficiency)
-#	Feb 2026 (added min_samples per locus)
+#	Feb 2026 (added min_samples per locus); Mar 2026 (changed multi-allelic reporting for Stacks)
 # Description: extract loci from an ipyrad .loci file (or Stacks populations.samples.fa) based on an input list and/or minimum number of samples
 # Note: this script will convert the allelic data from Stacks (if run that way) to a single consensus per sample
 ##########################
@@ -214,17 +214,23 @@ with open(loci_file, 'r') as locfile:
 
 					# process the stored seq_list to ensure each sample is represented by only one sequence
 					# generate loci output and store consensus if requested
-					if len(seq_list) >= (min_samples * 2):
+					sample_list = sorted(list(set([item[0] for item in seq_list])))
+					if len(sample_list) >= min_samples:
 						found_loci = found_loci + 1
 						seq_out_list = []
-						sample_list = sorted(list(set([item[0] for item in seq_list])))
+						singles_list = []
+						triples_list = []
 						for samp in sample_list:
 							seq_recs = [item[1] for item in seq_list if item[0] == samp]
 							if len(seq_recs) == 1:	# only represented by one sequence
-								print('Sample ' + str(samp) + ' has one allele for locus ' + str(this_locus_num))
+								singles_list.append(str(samp))
+								#print('Sample ' + str(samp) + ' has one allele for locus ' + str(this_locus_num))
 								seq_out_list.append(seq_recs[0])		
-							elif len(seq_recs) > 2:	# shouldn't happen
-								print('Sample ' + str(samp) + ' has more than two alleles for locus ' + str(this_locus_num))
+							elif len(seq_recs) > 2:	# shouldn't happen for diploids, but might in other systems?
+								triples_list.append(str(samp))
+								#print('Sample ' + str(samp) + ' has more than two alleles for locus ' + str(this_locus_num))
+								sample_seq = make_consensus([entry.seq for entry in seq_recs], samp)
+								seq_out_list.append(sample_seq)
 							else:		# normal two alleles
 								sample_seq = make_consensus([entry.seq for entry in seq_recs], samp)
 								seq_out_list.append(sample_seq)
@@ -235,6 +241,12 @@ with open(loci_file, 'r') as locfile:
 						if consens:
 							conseq = make_consensus([entry.seq for entry in seq_out_list], this_locus_num)
 							consensus_list.append(conseq)
+						if len(singles_list) > 0:
+							print(str(len(singles_list)) + ' samples had only one sequence for locus ' + str(this_locus_num))
+							#print(', '.join([sample for sample in singles_list]))
+						if len(triples_list) > 0:
+							print(str(len(triples_list)) + ' samples had more than two sequences for locus ' + str(this_locus_num))
+							#print(', '.join([sample for sample in triples_list]))
 					else:
 						empty_loci = empty_loci + 1
 
@@ -253,17 +265,23 @@ with open(loci_file, 'r') as locfile:
 							SeqRecord(Seq(line.strip()), id = str(sample), name = str(sample), description = str(sample))])
 
 		# run once more for last locus
-		if len(seq_list) >= (min_samples * 2):
+		sample_list = sorted(list(set([item[0] for item in seq_list])))
+		if len(sample_list) >= min_samples:
 			found_loci = found_loci + 1
 			seq_out_list = []
-			sample_list = sorted(list(set([item[0] for item in seq_list])))
+			singles_list = []
+			triples_list = []
 			for samp in sample_list:
 				seq_recs = [item[1] for item in seq_list if item[0] == samp]
 				if len(seq_recs) == 1:	# only represented by one sequence
-					print('Sample ' + str(samp) + ' has one allele for locus ' + str(this_locus_num))
+					singles_list.append(str(samp))
+					#print('Sample ' + str(samp) + ' has one allele for locus ' + str(this_locus_num))
 					seq_out_list.append(seq_recs[0])				
-				elif len(seq_recs) > 2:	# shouldn't happen
-					print('Sample ' + str(samp) + ' has more than two alleles for locus ' + str(this_locus_num))
+				elif len(seq_recs) > 2:	# shouldn't happen for diploids, but might in other systems?
+					triples_list.append(str(samp))
+					#print('Sample ' + str(samp) + ' has more than two alleles for locus ' + str(this_locus_num))
+					sample_seq = make_consensus([entry.seq for entry in seq_recs], samp)
+					seq_out_list.append(sample_seq)
 				else:		# normal two alleles
 					sample_seq = make_consensus([entry.seq for entry in seq_recs], samp)
 					seq_out_list.append(sample_seq)
@@ -274,6 +292,12 @@ with open(loci_file, 'r') as locfile:
 			if consens:
 				conseq = make_consensus([entry.seq for entry in seq_out_list], this_locus_num)
 				consensus_list.append(conseq)
+			if len(singles_list) > 0:
+				print(str(len(singles_list)) + ' samples had only one sequence for locus ' + str(this_locus_num))
+				#print(', '.join([sample for sample in singles_list]))
+			if len(triples_list) > 0:
+				print(str(len(triples_list)) + ' samples had more than two sequences for locus ' + str(this_locus_num))
+				#print(', '.join([sample for sample in triples_list]))
 		else:
 			empty_loci = empty_loci + 1
 
