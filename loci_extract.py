@@ -5,7 +5,7 @@
 # Date: Sep 2021
 # Modified: Nov 2021 (added a sample exclude option); Dec 2023 (increased summary and added consensus);
 #	Dec 2023 (extended to Stacks allelic output); Mar 2025 (decreased counter reporting; adjusted consensus calculations; improved Stacks efficiency)
-#	Feb 2026 (added min_samples per locus); Mar 2026 (changed multi-allelic reporting for Stacks)
+#	Feb 2026 (added min_samples per locus); Mar 2026 (changed multi-allelic reporting for Stacks, updated consensus generation for speed)
 # Description: extract loci from an ipyrad .loci file (or Stacks populations.samples.fa) based on an input list and/or minimum number of samples
 # Note: this script will convert the allelic data from Stacks (if run that way) to a single consensus per sample
 ##########################
@@ -23,35 +23,40 @@ from Bio.SeqRecord import SeqRecord
 # because the degenerate_consensus from motifs is behaving oddly, go back to the old approach
 # note: it was inserting a 'V' whenever the input position had only 'N' or non-ACGT
 # the current approach (below) will at least avoid this, though any lone non-ambiguity will be consensus
-# create an ambiguity dictionary
-amb_dict = {
-	'AC': 'M',
-	'AG': 'R',
-	'AT': 'W',
-	'CG': 'S',
-	'CT': 'Y',
-	'GT': 'K',
-	'ACG': 'V',
-	'ACT': 'H',
-	'AGT': 'D',
-	'CGT': 'B',
-	'ACGT': 'N'
-}
+# This function expects two arguments: a list of sequences and an identifier
+def make_consensus(seq_list, ident):
+	# create an ambiguity dictionary
+	amb_dict = {
+		'AC': 'M',
+		'AG': 'R',
+		'AT': 'W',
+		'CG': 'S',
+		'CT': 'Y',
+		'GT': 'K',
+		'ACG': 'V',
+		'ACT': 'H',
+		'AGT': 'D',
+		'CGT': 'B',
+		'ACGT': 'N'
+	}
 
-def make_consensus(seq_list, locus_num):
 	con_list = []
 	for position in range(len(seq_list[0])):
 		align_slice = [entry[position] for entry in seq_list]
+		if len(set(align_slice)) == 1:		# no variation
+			con_list.append(align_slice[0])
+			continue
+
 		bases = [base for base in align_slice if base not in ['-', 'N']]
 		base_list = []
 		if len(bases) != 0:
-			if bases.count('A') > 0:
+			if 'A' in bases:
 				base_list.append('A')
-			if bases.count('C') > 0:
+			if 'C' in bases:
 				base_list.append('C')
-			if bases.count('G') > 0:
+			if 'G' in bases:
 				base_list.append('G')
-			if bases.count('T') > 0:
+			if 'T' in bases:
 				base_list.append('T')
 
 			if len(base_list) == 1:
@@ -67,7 +72,7 @@ def make_consensus(seq_list, locus_num):
 		else:
 			con_list.append('-')
 
-	return(SeqRecord(Seq(''.join(con_list)), id = str(locus_num), name = str(locus_num), description = str(locus_num)))
+	return(SeqRecord(Seq(''.join(con_list)), id = str(ident), name = str(ident), description = str(ident)))
 
 
 # instantiate the parser
@@ -318,7 +323,8 @@ if loci_list:
 else:
 	print('Processed ' + str(processed_loci) + ' loci and extracted ' + str(found_loci) + ' loci')
 if empty_loci > 0:
-	print('Did not export ' + str(empty_loci) + ' loci that had fewer than ' + str(min_samples) + ' desired sample(s)')
+	print('Did not export ' + str(empty_loci) + ' loci that were not targeted or had fewer than ' + str(min_samples) +
+	' desired sample(s)')
 
 mean = sum(locus_lengths)/len(locus_lengths)
 stdev = statistics.pstdev(locus_lengths)
