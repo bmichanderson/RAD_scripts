@@ -591,16 +591,16 @@ pop_taxa <- read.table("dart_pop_taxa.txt", sep = "\t", header = FALSE)
 #### Autosomal/SNP heterozygosity
 To ensure no missing data, each population needs to be filtered separately  
 Only loci found in all samples in that population will be kept (zero missing data)  
-Note: currently, the function will not report Fis for autosomal(!) (i.e. including secondaries)
+Note: currently, dartR does not report Fis with autosomal adjustment(!) (i.e. including secondaries)
 ```{r}
 stde <- function(x) {
 	sqrt(var(x, na.rm = TRUE) / sum(!is.na(x)))
 }
 
 pops <- sort(unique(pop_filt_genl$pop))
-summary <- as.data.frame(matrix(ncol = 13, nrow = length(pops)))
-colnames(summary) <- c("Samples", "Loci_auto", "Ho_auto", "Ho_auto_se", "He_auto", "He_auto_se",
-	"Loci_SNPs", "Ho_SNP", "Ho_SNP_se", "He_SNP", "He_SNP_se", "Fis", "Fis_se")
+summary <- as.data.frame(matrix(ncol = 14, nrow = length(pops)))
+colnames(summary) <- c("Samples", "Loci_auto", "SNPs", "Ho_auto", "Ho_auto_se", "He_auto", "He_auto_se",
+	"unlink_SNPs", "Ho_SNP", "Ho_SNP_se", "uHe_SNP", "uHe_SNP_se", "Fis", "Fis_se")
 rownames(summary) <- pops
 
 # subset by taxon, if that information is present
@@ -610,64 +610,71 @@ if (exists("pop_taxa")) {
 		keep_pops <- pop_taxa[, 1][pop_taxa[, 2] == taxon]
 		keep_pops <- keep_pops[keep_pops %in% pops]
 		if (length(keep_pops) > 0) {
-			input_genl <- gl.keep.pop(pop_filt_genl, keep_pops, mono.rm = FALSE, recalc = TRUE)
-			# filter out loci that are all NA and have higher missing data across the taxon
-			input_genl <- gl.filter.allna(input_genl)
-			input_genl <- gl.filter.callrate(input_genl, method = "loc", threshold = 0.75)
+			input_genl <- gl.keep.pop(pop_filt_genl, keep_pops, mono.rm = TRUE, recalc = TRUE)
+			get_invariant <- gl.report.secondaries(input_genl)
+			taxon_loci <- get_invariant[1, 2]
+			taxon_invariant <- get_invariant[5, 2]		# observed invariant rather than estimated
 			# cycle through the pops of that taxon
 			for (pop in keep_pops) {
-				# subset and calculate autosomal stats
-				sub_genl <- gl.keep.pop(input_genl, pop, mono.rm = FALSE, recalc = TRUE)
-				sub_genl <- gl.filter.allna(sub_genl)		# remove completely missing loci
-				sub_genl <- gl.filter.callrate(sub_genl, method = "loc", threshold = 1)
+				# subset and estimate autosomal stats
+				sub_genl <- gl.keep.pop(input_genl, pop, mono.rm = FALSE, recalc = FALSE)
+				sub_genl <- gl.filter.allna(sub_genl, recalc = TRUE)		# remove all NA loci
+				sub_genl <- gl.filter.callrate(sub_genl, method = "loc", threshold = 1)		# remove partly missing
 				get_invariant <- gl.report.secondaries(sub_genl)
-				stats <- gl.report.heterozygosity(sub_genl, n.invariant = get_invariant[5, 2])
+				pop_loci <- get_invariant[1, 2]
+				stats <- gl.report.heterozygosity(sub_genl, n.invariant = (pop_loci / taxon_loci) * taxon_invariant)
 				summary[pop, "Samples"] <- nInd(sub_genl)
-				summary[pop, "Loci_auto"] <- stats[1, "n.Loc"]
+				summary[pop, "Loci_auto"] <- pop_loci
+				summary[pop, "SNPs"] <- stats[1, "n.Loc"]
 				summary[pop, "Ho_auto"] <- stats[1, "Ho.adj"]
 				summary[pop, "Ho_auto_se"] <- stats[1, "Ho.adjSE"]
 				summary[pop, "He_auto"] <- stats[1, "He.adj"]
 				summary[pop, "He_auto_se"] <- stats[1, "He.adjSE"]
 
-				# calculate stats from unlinked SNPs
-				filt_sub_genl <- gl.filter.secondaries(sub_genl, method = "best")
-				filt_sub_genl <- gl.filter.monomorphs(filt_sub_genl)
-				snp_stats <- gl.report.heterozygosity(filt_sub_genl, n.invariant = 0)
-				summary[pop, "Loci_SNPs"] <- snp_stats[1, "n.Loc"]
+				# estimate stats from unlinked variable SNPs
+				sub_genl <- gl.filter.monomorphs(sub_genl)
+				sub_genl <- gl.filter.secondaries(sub_genl, method = "random")
+				snp_stats <- gl.report.heterozygosity(sub_genl, n.invariant = 0)
+				summary[pop, "unlink_SNPs"] <- snp_stats[1, "n.Loc"]
 				summary[pop, "Ho_SNP"] <- snp_stats[1, "Ho"]
 				summary[pop, "Ho_SNP_se"] <- snp_stats[1, "HoSE"]
-				summary[pop, "He_SNP"] <- snp_stats[1, "uHe"]
-				summary[pop, "He_SNP_se"] <- snp_stats[1, "uHeSE"]
+				summary[pop, "uHe_SNP"] <- snp_stats[1, "uHe"]
+				summary[pop, "uHe_SNP_se"] <- snp_stats[1, "uHeSE"]
 				summary[pop, "Fis"] <- snp_stats[1, "FIS"]
 				summary[pop, "Fis_se"] <- snp_stats[1, "FISSE"]
 			}
 		}
 	}
-} else {		# otherwise, run for each pop independently
+} else {		# otherwise, run for each pop separately
 	input_genl <- pop_filt_genl
+	get_invariant <- gl.report.secondaries(input_genl)
+	dataset_loci <- get_invariant[1, 2]
+	dataset_invariant <- get_invariant[5, 2]		# observed invariant rather than estimated
 	for (pop in pops) {
-		# subset and calculate autosomal stats
-		sub_genl <- gl.keep.pop(input_genl, pop, mono.rm = FALSE, recalc = TRUE)
-		sub_genl <- gl.filter.allna(sub_genl)		# remove completely missing loci
-		sub_genl <- gl.filter.callrate(sub_genl, method = "loc", threshold = 1)
+		# subset and estimate autosomal stats
+		sub_genl <- gl.keep.pop(input_genl, pop, mono.rm = FALSE, recalc = FALSE)
+		sub_genl <- gl.filter.allna(sub_genl, recalc = TRUE)		# remove all NA loci
+		sub_genl <- gl.filter.callrate(sub_genl, method = "loc", threshold = 1)		# remove partly missing
 		get_invariant <- gl.report.secondaries(sub_genl)
-		stats <- gl.report.heterozygosity(sub_genl, n.invariant = get_invariant[5, 2])
+		pop_loci <- get_invariant[1, 2]
+		stats <- gl.report.heterozygosity(sub_genl, n.invariant = (pop_loci / dataset_loci) * dataset_invariant)
 		summary[pop, "Samples"] <- nInd(sub_genl)
-		summary[pop, "Loci_auto"] <- stats[1, "n.Loc"]
+		summary[pop, "Loci_auto"] <- get_invariant[1, 2]
+		summary[pop, "SNPs"] <- stats[1, "n.Loc"]
 		summary[pop, "Ho_auto"] <- stats[1, "Ho.adj"]
 		summary[pop, "Ho_auto_se"] <- stats[1, "Ho.adjSE"]
 		summary[pop, "He_auto"] <- stats[1, "He.adj"]
 		summary[pop, "He_auto_se"] <- stats[1, "He.adjSE"]
 
-		# calculate stats from unlinked SNPs
-		filt_sub_genl <- gl.filter.secondaries(sub_genl, method = "best")
-		filt_sub_genl <- gl.filter.monomorphs(filt_sub_genl)
-		snp_stats <- gl.report.heterozygosity(filt_sub_genl, n.invariant = 0)
-		summary[pop, "Loci_SNPs"] <- snp_stats[1, "n.Loc"]
+		# estimate stats from unlinked variable SNPs
+		sub_genl <- gl.filter.monomorphs(sub_genl)
+		sub_genl <- gl.filter.secondaries(sub_genl, method = "random")
+		snp_stats <- gl.report.heterozygosity(sub_genl, n.invariant = 0)
+		summary[pop, "unlink_SNPs"] <- snp_stats[1, "n.Loc"]
 		summary[pop, "Ho_SNP"] <- snp_stats[1, "Ho"]
 		summary[pop, "Ho_SNP_se"] <- snp_stats[1, "HoSE"]
-		summary[pop, "He_SNP"] <- snp_stats[1, "uHe"]
-		summary[pop, "He_SNP_se"] <- snp_stats[1, "uHeSE"]
+		summary[pop, "uHe_SNP"] <- snp_stats[1, "uHe"]
+		summary[pop, "uHe_SNP_se"] <- snp_stats[1, "uHeSE"]
 		summary[pop, "Fis"] <- snp_stats[1, "FIS"]
 		summary[pop, "Fis_se"] <- snp_stats[1, "FISSE"]
 	}
