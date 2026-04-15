@@ -297,19 +297,32 @@ plot5 <- gl.pcoa.plot(pca, filtered_genl, pop.labels = "pop",
 ```
 
 ### Structure
+Drop outgroups if desired or not done already (from a text file with sample IDs, one per line)
+```{r}
+outgroups <- read.table("dart_outgroup.txt", header = FALSE)[, 1]
+filtered_genl <- gl.drop.ind(filtered_genl, outgroups, mono.rm = TRUE, recalc = TRUE)
+cat(paste0("Filtered to a genlight of ", nInd(filtered_genl), " individuals and ",
+	nLoc(filtered_genl), " SNPs\n"))
+snps_remain <- nLoc(filtered_genl)
+```
+
 Output a file formatted for Structure, but first replace pop with a number in the genlight
 ```{r}
+filtered_genl <- gl.sort(filtered_genl, sort.by = "ind")
 index <- 1
 pops <- sort(unique(filtered_genl$pop))
 for (pop in pops) {
 	levels(filtered_genl$pop)[match(pop, levels(filtered_genl$pop))] <- index
 	index <- index + 1
 }
+filtered_genl <- gl.sort(filtered_genl, sort.by = "pop")
+
 gl2structure(filtered_genl, outfile = "structure_input.str", add.columns = filtered_genl$pop,
 	export.marker.names = FALSE, outpath = ".")
+
 coding <- cbind(filtered_genl$ind.names, filtered_genl$pop)
-write.table(coding[order(as.numeric(coding[, 2])), ], file = "str_pops.txt",
-	row.names = FALSE, col.names = FALSE, quote = FALSE)
+write.table(coding, file = "str_pops.txt", row.names = FALSE,
+	col.names = FALSE, quote = FALSE, sep = "\t")
 ```
 
 Clean up memory
