@@ -375,41 +375,49 @@ gc()
 ```
 
 ## Evolutionary inference
-### SNAPPER
-Load the distance dataset (with outgroups; no secondaries), filter based on MAF  
-Downsample as desired, putting desired samples in a text file `dart_snapper_samples.txt`, one per line  
-Filter for high coverage (set threshold as appropriate here)  
-Generate output removing SNPs only variable in a single population
+
+### SPEEDEMON
+Load the distance dataset (with outgroups; no secondaries)
 ```{r}
 snapper_genl <- gl.load("dist_filt_genl.rdata")
+```
+
+Filter the genlight based on minor allele count, then downsample if necessary  
+To keep specific samples, put IDs in a text file `dart_speedemon_samples.txt`, one per line
+```{r}
 snapper_genl <- gl.filter.maf(snapper_genl, threshold = 3)
-
-keep <- read.table("dart_snapper_samples.txt", header = FALSE)[, 1]
+keep <- read.table("dart_speedemon_samples.txt", header = FALSE)[, 1]
 snapper_genl <- gl.keep.ind(snapper_genl, as.character(keep), mono.rm = TRUE, recalc = TRUE)
-
 cat(paste0("Filtered to a genlight of ", nInd(snapper_genl), " individuals and ",
 	nLoc(snapper_genl), " SNPs\n"))
+```
 
+Filter for high coverage and generate output removing SNPs only variable in a single population
+```{r}
 snapper_genl <- gl.filter.callrate(snapper_genl, method = "loc", threshold = 1)
-gl2snapper(snapper_genl, outfile = "snapper_snapp.nex", outpath = ".",
+gl2snapper(snapper_genl, outfile = "dart_speedemon_snapp.nex", outpath = ".",
 	rm.autapomorphies = TRUE, nloc = 1000)
 ```
-Note: BEAUti may have issues reading this in, so you may have to change `integerdata` to `snp` in the output file  
+Note: BEAUti may have issues reading this in, so you may have to manually change `integerdata` to `snp` in the output file  
 
-NEXUS of binary characters  
-This could be useful for SplitsTree and uncorrected P-distances  
-As an example, use the `snapper_genl` just filtered above (or modify for `filtered_genl`)  
-If interested in changing display labels, read in a text file with two columns (original and new), no header  
+Create a similar output of binary characters to check that relationships make sense in SplitsTree
 ```{r}
-mygenl <- gl.subsample.loci(snapper_genl, 1000, method = "random")
-mymat <- as.matrix(mygenl)
+# from the gl2snapper function
+freqs <- gl.allele.freq(snapper_genl, by = "popxloc")
+subset <- freqs[freqs$frequency < 0.99, ]
+subset <- subset[subset$frequency > 1e-04, ]
+tbl <- table(subset$locus)
+single_count_loci <- names(tbl[tbl == 1])
+mygenl <- gl.drop.loc(snapper_genl, loc.list = single_count_loci)
 
-# rename if desired (comment out if not)
-names <- read.table("rename.txt", header = FALSE, sep = "\t")
-names$V1 <- as.character(names$V1)
-for (index in seq_len(nrow(mymat))) {
-	rownames(mymat)[index] <- names$V2[match(rownames(mymat)[index], names$V1)]
+# subsample and change labels for output
+mygenl <- gl.subsample.loci(mygenl, 1000, method = "random")
+mymat <- as.matrix(mygenl)
+labels <- vector(length = length(rownames(mymat)))
+for (index in seq_len(length(rownames(mymat)))) {
+	labels[index] <- paste0(pop(mygenl)[index], "_", indNames(mygenl)[index])
 }
+rownames(mymat) <- labels
 
 # generate output
 mymat[is.na(mymat)] <- "?"
@@ -422,7 +430,7 @@ data_block <- paste0("BEGIN TAXA;\n\tDIMENSIONS NTAX=", nrow(mymat), ";\n\t",
 	"BEGIN CHARACTERS;\n\tDIMENSIONS NCHAR=", 2 * ncol(mymat), ";\n\t",
 	"FORMAT\n\t\tDATATYPE=STANDARD\n\t\tMISSING=?\n\t\t",
 	"LABELS=NO\n\t\tSYMBOLS=\"01\";\n\tMATRIX")
-outfile <- file("snapper_splits.nex", open = "w")
+outfile <- file("dart_speedemon_splits.nex", open = "w")
 writeLines("#NEXUS", con = outfile)
 writeLines(data_block, con = outfile)
 for (entry in matrix_block) {
