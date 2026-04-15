@@ -5,6 +5,7 @@
 # Date: Oct 2021
 # Modified: April 2022; May 2025 (cleaned up; added optional samples file input for converting
 # 	tip labels and population table for removing autapomorphic SNPs for SNAPP/ER)
+#	April 2026 (added another sort of genotypes in case it wasn't sorted)
 # Description: convert a VCF file (VCF 4.0) to a Nexus file for SplitsTree or SNAPP/ER
 ##########################
 
@@ -197,6 +198,7 @@ for index, sample_label in enumerate(sample_labels):
 			if '.' in gt:	# missing data
 				gts.append('??')
 			else:
+				gt = sorted(gt)
 				gts.append(str(gt[0]))
 				gts.append(str(gt[1]))
 	line_out = ''.join(gts)
