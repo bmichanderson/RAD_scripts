@@ -9,6 +9,7 @@
 #	Apr 2025 (added argument to make plotting optional)
 #	Mar 2026 (added another gene diversity estimate and option for inbreeding; updated/fixed weighting;
 #	added adjustment to gene diversity in fasta calcs to account for small sample sizes)
+#	Mar 2026 (added the inbreeding adjustment to Reich Fst calculations as well: probably preferable to use generally)
 # Description: calculate various popgen stats for a VCF file or a set of fasta alignments specified in a text file
 # Note:	either the VCF or fasta files must be present
 # Note: if specifying fasta input, it is assumed the alignments come from a single population
@@ -40,7 +41,7 @@ help <- function(help_message) {
 		cat("\t-o\tThe output file name prefix [default output]\n")
 		cat("\t-v\tThe VCF file to be analysed\n")
 		cat("\t-f\tThe text file list of fasta alignments to be analysed (loci from a single population)\n")
-		cat("\t-g\tThe type of gene diversity estimate to use: \"i\" for inbred, \"n\" for normal [default]\n")
+		cat("\t-g\tThe type of gene diversity/Reich Fst estimate to use: \"i\" for inbred/unbiased, \"n\" for normal [default]\n")
 		cat("\t-s\tSamples and populations as a tab-delimited file of sample IDs and pops, one per line\n")
 		cat("\t\tNote: if running with fasta alignments, this file should only match the population being analysed\n")
 		cat("\t-t\tRun pairwise Fst calculations between populations (only for VCF) [default: do not]\n")
@@ -201,14 +202,17 @@ gd_inbred <- function(x) {
 ### Another way to calculate Fst that accounts for smaller/different
 ### sample sizes was put forward by Reich et al. 2009 and shown to
 ### be less biased by sample size in Willing et al. 2012
-### This measure was implemented for a genlight object here:
+### Note: in Willing et al., they use the unbiased estimator (see below)
+### The normal measure was implemented for a genlight object here:
 ### https://github.com/jessicarick/reich-fst/blob/master/reich_fst.R
 ### A modified version of that calculation is included here to avoid
 ### the need to use other R packages
 ### Note: due to precision in R, error can accumulate when there is
-### addition after division, so reduce this where possible and
-### round the result to 4 decimal places
-reich_fst <- function(genl, populations) {
+### addition after division, so reduce this if possible and
+### round the final result to 4 decimal places
+### Note: this tends to report negative Fst estimates (downward bias)
+### 	the unbiased estimator below does not show the same behaviour
+reich_fst_norm <- function(genl, populations) {
 	pops <- unique(populations)
 	fsts_reich <- matrix(nrow = length(pops),
 		ncol = length(pops),
@@ -219,17 +223,109 @@ reich_fst <- function(genl, populations) {
 	for (pop in pops) {
 		cat(paste0(" ", index))
 		pop1mat <- as.matrix(genl[genl@pop == pop])
-		a1 <- apply(pop1mat, 2, function(x) sum(x, na.rm = TRUE))
-		n1 <- apply(pop1mat, 2, function(x) 2 * sum(!is.na(x)))
-		h1 <- (a1 * (n1 - a1)) / (n1 * (n1 - 1))
+
+		# only keep loci with at least two individuals
+		s <- apply(pop1mat, 2, function(x) sum(!is.na(x)))
+		loci <- colnames(pop1mat)[s > 1]
+		pop1mat <- pop1mat[, loci]
+
 		for (pop2 in pops[-1: -index]) {
 			pop2mat <- as.matrix(genl[genl@pop == pop2])
-			a2 <- apply(pop2mat, 2, function(x) sum(x, na.rm = TRUE))
-			n2 <- apply(pop2mat, 2, function(x) 2 * sum(!is.na(x)))
+			# start with the same loci
+			pop2mat <- pop2mat[, loci]
+
+			# only keep loci with at least two individuals
+			t <- apply(pop2mat, 2, function(x) sum(!is.na(x)))
+			new_loci <- colnames(pop2mat)[t > 1]
+			comp_pop1mat <- pop1mat[, new_loci]
+			comp_pop2mat <- pop2mat[, new_loci]
+
+			a1 <- apply(comp_pop1mat, 2, function(x) sum(x, na.rm = TRUE))
+			n1 <- apply(comp_pop1mat, 2, function(x) 2 * sum(!is.na(x)))
+			h1 <- (a1 * (n1 - a1)) / (n1 * (n1 - 1))
+
+			a2 <- apply(comp_pop2mat, 2, function(x) sum(x, na.rm = TRUE))
+			n2 <- apply(comp_pop2mat, 2, function(x) 2 * sum(!is.na(x)))
 			h2 <- (a2 * (n2 - a2)) / (n2 * (n2 - 1))
-			bign <- (((a1 * n2) - (a2 * n1)) / (n1 * n2))^2 -
-				(a1 * (n1 - a1)) / (n1 * n1 * (n1 - 1)) - (a2 * (n2 - a2)) / (n2 * n2 * (n2 - 1))
-			bigd <- bign + h1 + h2
+
+			# calculate Fst
+			# simple bign <- (a1/n1 - a2/n2)^2 - h1/n1 - h2/n2
+			# reduce division followed by addition
+			bign_numer <- ((a1 * n2) - (a2 * n1)) ^ 2 - ((n2 ^ 2) * n1 * h1) - ((n1 ^ 2) * n2 * h2)
+			bign_denom <- (n1 ^ 2) * (n2 ^ 2)
+			bign <- bign_numer / bign_denom
+			bigd <- (bign_numer + bign_denom * (h1 + h2)) / bign_denom
+			fst_r <- sum(bign, na.rm = TRUE) / sum(bigd, na.rm = TRUE)
+			fsts_reich[pop2, pop] <- round(fst_r, digits = 4)
+		}
+		index <- index + 1
+	}
+	cat("\n")
+	# return the matrix
+	fsts_reich
+}
+
+### If there is inbreeding (close relatives), one option is to use the
+### unbiased estimate of Reich Fst from their supplementary material
+### In this case, subsample the loci randomly, then average
+reich_fst_inbred <- function(genl, populations) {
+	pops <- unique(populations)
+	fsts_reich <- matrix(nrow = length(pops),
+		ncol = length(pops),
+		dimnames = list(pops, pops))
+	index <- 1
+	cat(paste0("Calculating pairwise Fst for populations",
+		" (", length(pops), "):"))
+	for (pop in pops) {
+		cat(paste0(" ", index))
+		pop1mat <- as.matrix(genl[genl@pop == pop])
+		x0 <- apply(pop1mat, 2, function(x) sum(x == 0, na.rm = TRUE))
+		x1 <- apply(pop1mat, 2, function(x) sum(x == 1, na.rm = TRUE))
+		x2 <- apply(pop1mat, 2, function(x) sum(x == 2, na.rm = TRUE))
+		s <- x0 + x1 + x2
+
+		# only keep loci with s > 1
+		loci <- colnames(pop1mat)[s > 1]
+		pop1mat <- pop1mat[, loci]
+
+		for (pop2 in pops[-1: -index]) {
+			pop2mat <- as.matrix(genl[genl@pop == pop2])
+			# only start with the same loci
+			pop2mat <- pop2mat[, loci]
+
+			y0 <- apply(pop2mat, 2, function(x) sum(x == 0, na.rm = TRUE))
+			y1 <- apply(pop2mat, 2, function(x) sum(x == 1, na.rm = TRUE))
+			y2 <- apply(pop2mat, 2, function(x) sum(x == 2, na.rm = TRUE))
+			t <- y0 + y1 + y2
+
+			# only keep loci with t > 1
+			new_loci <- colnames(pop2mat)[t > 1]
+
+			# randomly sample 75% of the loci for comparison
+			sampled_loci <- sample(new_loci, round(0.75 * length(new_loci), 0))
+			comp_pop1mat <- pop1mat[, sampled_loci]
+			comp_pop2mat <- pop2mat[, sampled_loci]
+
+			x0 <- apply(comp_pop1mat, 2, function(x) sum(x == 0, na.rm = TRUE))
+			x1 <- apply(comp_pop1mat, 2, function(x) sum(x == 1, na.rm = TRUE))
+			x2 <- apply(comp_pop1mat, 2, function(x) sum(x == 2, na.rm = TRUE))
+			s <- x0 + x1 + x2
+			exp_h1 <- (4 * x0 * x2 + (x0 + x2) * 2 * x1 + x1 * (x1 - 1)) / (4 * s * (s - 1))
+
+			y0 <- apply(comp_pop2mat, 2, function(x) sum(x == 0, na.rm = TRUE))
+			y1 <- apply(comp_pop2mat, 2, function(x) sum(x == 1, na.rm = TRUE))
+			y2 <- apply(comp_pop2mat, 2, function(x) sum(x == 2, na.rm = TRUE))
+			t <- y0 + y1 + y2
+			exp_h2 <- (4 * y0 * y2 + (y0 + y2) * 2 * y1 + y1 * (y1 - 1)) / (4 * t * (t - 1))
+
+			# calculate Fst
+			# reduce division followed by addition
+			exp_x <- ((t * x1 + 2 * t * x2 - s * y1 - 2 * s * y2) ^ 2 +
+				x1 * (t ^ 2) + y1 * (s ^ 2)) / (4 * (s ^ 2) * (t ^ 2))
+			bign_numer <- (s * t * exp_x) - (t * exp_h1) - (s * exp_h2)
+			bign_denom <- s * t
+			bign <- bign_numer / bign_denom
+			bigd <- (bign_numer + bign_denom * (exp_h1 + exp_h2)) / bign_denom
 			fst_r <- sum(bign, na.rm = TRUE) / sum(bigd, na.rm = TRUE)
 			fsts_reich[pop2, pop] <- round(fst_r, digits = 4)
 		}
@@ -308,12 +404,17 @@ if (all(c(! vcf_present, ! fasta_present))) {
 }
 
 
-# set which gene diversity measure to use
+# set which gene diversity (and Reich Fst) measure to use
 if (genediversity == "i") {
 	gd_measure <- gd_inbred
 	cat("Using an unbiased gene diversity estimate given putative inbreeding\n")
+	reich_fst <- reich_fst_inbred
+	if (run_fst) {
+		cat("Using an unbiased Reich Fst estimate (if running Reich Fst) given putative inbreeding\n")
+	}
 } else {
 	gd_measure <- gd_normal
+	reich_fst <- reich_fst_norm
 }
 
 
@@ -334,7 +435,6 @@ if (fasta_present) {
 #####################
 # VCF
 #####################
-
 
 # process the VCF file, if present, and calculate stats
 if (vcf_present) {
@@ -405,15 +505,15 @@ if (vcf_present) {
 			names = rownames(summary))
 
 		### graph the amount of missing data
-		barplot(summary$Mean_percent_miss, las = 2, main = "Average missing (%)",
+		barplot(summary$Missing_percent, las = 2, main = "Average missing (%)",
 			names = rownames(summary))
 
 		### graph the values by population
-		mybarplot(summary$Ho, summary$Ho_SE, names = rownames(summary),
+		mybarplot(summary$Ho, summary$Ho_se, names = rownames(summary),
 			main = "Ho, observed heterozygosity")
-		mybarplot(summary$Hs, summary$Hs_SE, names = rownames(summary),
+		mybarplot(summary$Hs, summary$Hs_se, names = rownames(summary),
 			main = "Hs, estimated gene diversity\n(expected heterozygosity)")
-		mybarplot(summary$Fis, summary$Fis_SE, names = rownames(summary),
+		mybarplot(summary$Fis, summary$Fis_se, names = rownames(summary),
 			main = "Inbreeding coefficient Fis\n(1 - Ho / Hs)")
 
 		### stop creating the pdf
@@ -429,27 +529,27 @@ if (vcf_present) {
 
 		if (type_fst == "r") {
 			### calculate Reich Fst
-			cat("Calculating pairwise Fst using an adaptation of Reich et al. 2009\n")
+			cat("Calculating pairwise Fst using the estimate from Reich et al. 2009\n")
 			fsts_reich <- reich_fst(genl, populations)
 			### export the pairwise Fst values to file
 			write.table(fsts_reich, file = paste0(out_pref, "_Reich_Fst.txt"),
 				quote = FALSE, row.names = TRUE)
 		} else if (type_fst == "s") {
 			### calculate Weir and Cockerham Fst with StAMPP
-			cat("Calculating pairwise Fst using StAMPP\n")
+			cat("Calculating pairwise Fst using StAMPP (Weir & Cockerham)\n")
 			fsts <- stamppFst(genl, nboots = 1)
 			### export the pairwise Fst values to file
 			write.table(fsts, file = paste0(out_pref, "_StAMPP_Fst.txt"),
 				quote = FALSE, row.names = TRUE)
 		} else {
 			### calculate Weir and Cockerham Fst with StAMPP
-			cat("Calculating pairwise Fst using StAMPP\n")
+			cat("Calculating pairwise Fst using StAMPP (Weir & Cockerham)\n")
 			fsts <- stamppFst(genl, nboots = 1)
 			### export the pairwise Fst values to file
 			write.table(fsts, file = paste0(out_pref, "_StAMPP_Fst.txt"),
 				quote = FALSE, row.names = TRUE)
 			### calculate Reich Fst
-			cat("Calculating pairwise Fst using an adaptation of Reich et al. 2009\n")
+			cat("Calculating pairwise Fst using the estimate from Reich et al. 2009\n")
 			fsts_reich <- reich_fst(genl, populations)
 			### export the pairwise Fst values to file
 			write.table(fsts_reich, file = paste0(out_pref, "_Reich_Fst.txt"),
@@ -462,7 +562,6 @@ if (vcf_present) {
 #####################
 # fasta
 #####################
-
 
 # process the fasta files (individual loci), if present, and calculate stats
 if (fasta_present) {
